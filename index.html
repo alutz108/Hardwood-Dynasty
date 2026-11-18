@@ -282,8 +282,7 @@ function genPool(){S.pool=[];ROLES.forEach(role=>{for(let i=0;i<3;i++)S.pool.pus
 function newGame(teamIdx,coachName){
  S={v:2,slot:"d"+Date.now().toString(36),hist:[],year:2026,pid:1,user:teamIdx,day:0,phase:"season",step:0,week:0,pts:0,news:[],games:[],created:{},mte:[],ct:{},ncaa:null,poll:[],pollPrev:{},recruits:[],portal:[],signed:[],staff:{},pool:[],offers:[],dep:null,
   coach:{name:coachName||"Coach",rep:50,sec:70,w:0,l:0,ncaa:0,f4:0,titles:0,yrsHere:0,hist:[]},teams:[]};
- TEAMDEF.forEach((d,i)=>{const t={id:i,name:d.name,ab:d.ab,c1:d.c1,c2:d.c2,conf:d.conf,base:d.base,pr:d.pr,coach:newCoach(d.pr),roster:[],w:0,l:0,cw:0,cl:0,elo:1500,tb:{rd:-2,seed:0}};S.teams.push(t);});
- S.teams.forEach(t=>{const base=42+t.pr*.36+gauss()*2.5;const pos=shuffle(["PG","SG","SF","PF","C","PG","SG","SF","PF","C","SG","SF","C"]);const off=[8,6,5,4,3,1,0,-2,-4,-6,-8,-10,-12];pos.forEach((p,i)=>t.roster.push(newPlayer(p,base+off[i]+gauss()*3,ri(1,4))));});
+ const W=PRE||buildWorld();PRE=null;S.teams=W.teams;S.pid=W.pid;if(W.realRosters)S.realRosters=W.realRosters;
  applyRealCoaches();T(S.user).coach=null;
  ROLES.forEach(role=>S.staff[role]={fn:pick(FIRST),ln:pick(LASTN),role,r:ri(48,62)});
  genPool();genRecruits();startSeason(true);
@@ -691,7 +690,8 @@ function setupView(){
  ${SLOTS.length?`<button class="btn sm" data-act="mydyn" style="margin-top:16px">Back to my dynasties</button>`:""}
  <h2>Your name</h2><input type="text" id="cname" placeholder="Coach name" value="${esc(UI.cname||"")}" style="width:100%" maxlength="30" aria-label="Coach name">
  <h2>Pick a program</h2><label class="sm muted" for="cfsel">Conference</label><br><select id="cfsel" data-act="setconf" style="width:100%;margin:4px 0 10px">${confs.map(c=>`<option ${c===cf?"selected":""}>${esc(c)}</option>`).join("")}</select>
- <div class="list">${list.map(t=>`<button class="li" data-act="pickteam" data-v="${t.i}">${badge(t,34)}<div class="grow"><div style="font-weight:600">${esc(t.name)}</div><div class="sm muted">Prestige ${t.pr} · ${t.pr>=85?"Blue blood":t.pr>=70?"Contender":t.pr>=55?"Solid":t.pr>=40?"Rebuild":"Long climb"}</div></div><span class="btn sm">Coach here</span></button>`).join("")}</div>
+ <div class="panel sm row" style="flex-wrap:wrap;gap:8px">${PRE&&PRE.realRosters?`<span class="grow">Real ${esc(PRE.realRosters)} rosters loaded. Team details now show the real players, and your dynasty will start with them.</span>`:`<span class="grow">Want real players? Load the rosters now and every team's details will show its real roster.</span>${ONSITE?`<button class="btn sm pri" data-act="presite">Load rosters from my site</button>`:""}<label class="btn sm" style="cursor:pointer">Load rosters file<input type="file" accept=".json,application/json" data-act="prefile" hidden></label>`}</div>
+ <div class="list">${list.map(t=>`<div class="li">${badge(t,34)}<div class="grow"><button class="lnk" data-act="preview" data-v="${t.i}" style="color:var(--ink)">${esc(t.name)}</button><div class="sm muted">Prestige ${t.pr} · ${t.pr>=85?"Blue blood":t.pr>=70?"Contender":t.pr>=55?"Solid":t.pr>=40?"Rebuild":"Long climb"}</div></div><button class="btn sm" data-act="preview" data-v="${t.i}">Details</button><button class="btn sm pri" data-act="pickteam" data-v="${t.i}">Coach here</button></div>`).join("")}</div>
  <p class="sm muted">Teams appear with their real names and colors; logos are shown as monogram badges.</p></main>`;
 }
 
@@ -941,6 +941,33 @@ function openRecruit(id){const r=S.recruits.find(x=>x.id===id);if(!r)return;UI.r
  <h3 style="margin-top:14px">Ratings</h3>${attrBars(r)}
  <h3 style="margin-top:16px">Recruitment</h3>${other?`<p class="muted">Committed to ${esc(T(r.to).name)}.</p>`:done?`<p><span class="tag amb">Committed to ${esc(T(S.user).name)}</span></p>`:`<div class="row sm"><span class="grow">Interest in ${esc(T(S.user).name)}</span><b class="num">${r.int}/100</b></div><div class="bar" style="margin:4px 0 6px"><i style="width:${r.int}%"></i></div><div class="sm muted">Fit ${Math.round(recMult(r)*100)}% · ${r.off?"Offered":"No offer yet"} · ${S.pts} points left this week</div>${S.phase==="season"?`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`:""}`}
  <button class="btn" data-act="close" style="width:100%;margin-top:14px">Close</button>`;render();}
+
+/* ============ team preview on the setup screen ============ */
+let PRE=null;
+function buildWorld(){const keep=S;S={v:2,pid:1,user:-1,teams:[],coach:{name:""},hist:[]};
+ TEAMDEF.forEach((d,i)=>{S.teams.push({id:i,name:d.name,ab:d.ab,c1:d.c1,c2:d.c2,conf:d.conf,base:d.base,pr:d.pr,coach:newCoach(d.pr),roster:[],w:0,l:0,cw:0,cl:0,elo:1500,tb:{rd:-2,seed:0}});});
+ S.teams.forEach(t=>{const base=42+t.pr*.36+gauss()*2.5,pos=shuffle(["PG","SG","SF","PF","C","PG","SG","SF","PF","C","SG","SF","C"]),off=[8,6,5,4,3,1,0,-2,-4,-6,-8,-10,-12];pos.forEach((p,i)=>t.roster.push(newPlayer(p,base+off[i]+gauss()*3,ri(1,4))));});
+ applyRealCoaches();const w=S;S=keep;return w;}
+function preWorld(){if(!PRE)PRE=buildWorld();return PRE;}
+function keepName(){const el=document.getElementById("cname");if(el)UI.cname=el.value;}
+function prePreview(i){keepName();const W=preWorld(),t=W.teams[i],c=t.coach,d=depth(t),A=teamAgg(t);
+ const strs=W.teams.map(x=>[x.id,strength(x)]).sort((a,b)=>b[1]-a[1]),rk=strs.findIndex(x=>x[0]===i)+1,crk=strs.filter(x=>W.teams[x[0]].conf===t.conf).findIndex(x=>x[0]===i)+1,nconf=W.teams.filter(x=>x.conf===t.conf).length;
+ const lab=t.pr>=85?"Blue blood":t.pr>=70?"Contender":t.pr>=55?"Solid":t.pr>=40?"Rebuild":"Long climb";
+ UI.modal=`<div class="row" style="gap:12px">${badge(t,60)}<div class="grow"><h3 style="margin:0">${esc(t.name)}</h3><div class="sm muted">${esc(t.conf)} · Prestige ${t.pr} · ${lab}</div></div></div>
+ <div class="panel"><div class="row"><span class="grow">Roster strength</span><b>No. ${rk} nationally</b></div><div class="row"><span class="grow">In the ${esc(t.conf)}</span><b>${ord(crk)} of ${nconf}</b></div>
+ <div class="row"><span class="grow">Board expects</span><b>${Math.round(expW(t)*100)}% wins</b></div>
+ <div class="row"><span class="grow">Recruiting pull</span><b>${t.pr>=80?"National":t.pr>=60?"Strong regional":t.pr>=40?"Regional":"Local"}</b></div>
+ <div class="row"><span class="grow">Assistant staff budget</span><b>${money(Math.round(400+t.pr*14))}</b></div>
+ <div class="row"><span class="grow">Transfer portal NIL budget</span><b>${money(Math.round(100+t.pr*t.pr*.25))}</b></div></div>
+ <div class="panel"><div class="sm muted">Current head coach (you'd replace him)</div><b>${esc((c.fn+" "+c.ln).trim())}</b> <span class="sm muted">rating ${c.r}</span><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap"><span class="tag">${esc(c.off||"Motion")}</span><span class="tag">${esc(c.def||"Man-to-man")}</span></div></div>
+ <div class="panel sm">Top seven average: 3-point ${Math.round(A.thr)}, speed ${Math.round(A.spd)}, finishing ${Math.round(A.fin)}, ball handling ${Math.round(A.drb)}, perimeter D ${Math.round(A.pdf)}</div>
+ <h3>Roster (${d.length})${W.realRosters?` <span class="tag amb">Real ${esc(W.realRosters)}</span>`:""}</h3>
+ <div class="list">${d.map(p=>{bio(p);return `<div class="li" style="align-items:flex-start"><span class="tag">${p.pos}</span><div class="grow"><div style="font-weight:600">${p.num?`<span class="muted num">#${esc(p.num)}</span> `:""}${esc((p.fn+" "+p.ln).trim())}</div><div class="sm muted">${cls(p)} · ${fmtHt(htOf(p))} · ${esc(roles(p).join(", ")||"Role player")}</div>${p.home?`<div class="sm muted">${esc(p.home)}${p.school?" · "+esc(p.school):""}</div>`:""}</div><span class="num" style="font-size:18px">${p.ovr}</span></div>`;}).join("")}</div>
+ ${W.realRosters?"":`<p class="sm muted">These are the made-up players you'd inherit. Load real rosters on the team list to preview the real players instead.</p>`}
+ <div class="btns"><button class="btn pri" data-act="pickteam" data-v="${i}">Coach ${esc(t.name)}</button><button class="btn" data-act="close">Back to teams</button></div>`;render();}
+function preRosters(d){if(!d||d.type!=="hardwood-rosters"||!d.teams){toast("That isn't a Hardwood rosters file");return;}keepName();const W=preWorld(),keep=S;S=W;const n=applyRosters(d);S=keep;W.realRosters=d.label||"Real";toast(`Real rosters loaded for ${n} teams`);render();}
+async function preSite(){keepName();const names=[];for(let y=new Date().getFullYear();y>=2026;y--)names.push(`hardwood-rosters-${y}-${String((y+1)%100).padStart(2,"0")}.json`);names.push("rosters.json");toast("Looking for rosters on your site…");
+ for(const f of names){try{const r=await fetch(f,{cache:"no-cache"});if(!r.ok)continue;preRosters(await r.json());return;}catch(e){}}toast("No rosters file found on your site");}
 
 /* ============ real rosters import ============ */
 function statsAdjust(p,s){if(!s||s[0]<5)return;const x=p.x,bl=(k,v,w)=>x[k]=clamp(Math.round(x[k]*(1-w)+v*w),20,99),[g,mp,pt,rb,as,stl,bk,fg,tp,tpa,ft]=s;
@@ -1288,7 +1315,9 @@ document.addEventListener("click",e=>{
  if(a==="close"){if(el.classList.contains("modal")&&e.target!==el)return;UI.modal=null;render();return;}
  if(a==="tab"){UI.tab=v;UI.modal=null;render();window.scrollTo(0,0);return;}
  if(a==="seg"){if(el.dataset.name==="bk")UI.bkReg=+v;else UI.seg[el.dataset.name]=v;render();return;}
- if(a==="pickteam"){const n=(document.getElementById("cname")||{}).value||"";newGame(+v,n.trim()||"Coach "+pick(LASTN));UI.tab="home";render();return;}
+ if(a==="pickteam"){const n=(document.getElementById("cname")||{}).value||UI.cname||"";UI.modal=null;newGame(+v,n.trim()||"Coach "+pick(LASTN));UI.tab="home";render();window.scrollTo(0,0);return;}
+ if(a==="preview"){prePreview(+v);return;}
+ if(a==="presite"){preSite();return;}
  if(a==="play"){playNext();return;}
  if(a==="simweek"){let n=0;while(S.phase==="season"&&n<2){stepDay();n++;if(S.ncaa&&!S.selSeen)break;}save();render();maybeSel();return;}
  if(a==="simto"){simUntil(+v);return;}
@@ -1327,6 +1356,7 @@ document.addEventListener("click",e=>{
 });
 document.addEventListener("change",e=>{const el=e.target,a=el.dataset.act;
  if(a==="setconf"){UI.cname=(document.getElementById("cname")||{}).value;UI.setConf=el.value;render();}
+ if(a==="prefile"&&el.files&&el.files[0]){const fr=new FileReader();fr.onload=()=>{try{preRosters(JSON.parse(fr.result));}catch(e){toast("That isn't a Hardwood rosters file");}};fr.readAsText(el.files[0]);el.value="";}
  if(a==="rfilter"){UI.rFilter=el.value;render();}
  if(a==="rpos"){UI.rPos=el.value;render();}
  if(a==="confview"){UI.confView=el.value;render();}
