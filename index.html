@@ -874,6 +874,7 @@ function officeView(){const c=S.coach,u=T(S.user);let h=`<h2>${esc(c.name)}</h2>
  h+=styleSection()+`<h2>Assistant coaches</h2><p class="sm muted" style="margin-top:-4px">Staff budget ${money(cost)} of ${money(bud)}.</p><div class="list">${ROLES.map(role=>{const s=S.staff[role];return `<div class="li"><div class="grow"><div style="font-weight:600">${role}: ${s?esc(s.fn+" "+s.ln):"<span class='muted'>Vacant</span>"}</div><div class="sm muted">${ROLEDESC[role]}${s?` · Rating ${s.r} · ${money(salary(s.r))}`:""}</div></div>${s?`<button class="btn sm" data-act="fire" data-v="${role}">Fire</button>`:""}</div>`;}).join("")}</div>
  <h3 style="margin-top:14px">Available to hire</h3><div class="list">${S.pool.map((s,i)=>{const cur=S.staff[s.role],after=cost-(cur?salary(cur.r):0)+salary(s.r);return `<div class="li"><div class="grow"><div>${esc(s.fn+" "+s.ln)} <span class="tag">${s.role}</span></div><div class="sm muted">Rating ${s.r} · ${money(salary(s.r))}${cur?` · replaces ${esc(cur.ln)}`:""}</div></div><button class="btn sm pri" data-act="hire" data-v="${i}" ${after>bud?"disabled":""}>Hire</button></div>`;}).join("")}</div>
  <h2>Teams and coaches</h2><p class="sm muted" style="margin-top:-4px">Rename players and coaches, or paste in a real roster for any team. Real head coaches are loaded as of fall 2026.</p><div class="btns"><button class="btn pri" data-act="openeditor">Open the editor</button><button class="btn" data-act="realcoaches">Load real head coaches</button></div>
+ <h2>Real rosters</h2><p class="sm muted" style="margin-top:-4px">${S.realRosters?`Loaded: ${esc(S.realRosters)} rosters. `:""}Load a Hardwood rosters file to fill every team with its real players, using real heights, classes, hometowns and last season's stats to set their ratings. Works before the first game of a season.</p><div class="btns"><label class="btn ${S.phase==="season"&&S.day===0?"pri":""}" style="cursor:pointer">Load rosters file<input type="file" accept=".json,application/json" data-act="rosterfile" hidden></label></div>
  <h2>Settings</h2><div class="btns"><button class="btn" data-act="mydyn">My dynasties</button><button class="btn" data-act="newgame">Start a new dynasty</button><button class="btn" data-act="exportdyn" data-v="${S.slot}">Export this dynasty</button></div><p class="sm muted">Your dynasty saves automatically on this device. Starting a new one keeps this one; manage them all from My dynasties.</p>`;
  return h;}
 
@@ -941,6 +942,24 @@ function openRecruit(id){const r=S.recruits.find(x=>x.id===id);if(!r)return;UI.r
  <h3 style="margin-top:16px">Recruitment</h3>${other?`<p class="muted">Committed to ${esc(T(r.to).name)}.</p>`:done?`<p><span class="tag amb">Committed to ${esc(T(S.user).name)}</span></p>`:`<div class="row sm"><span class="grow">Interest in ${esc(T(S.user).name)}</span><b class="num">${r.int}/100</b></div><div class="bar" style="margin:4px 0 6px"><i style="width:${r.int}%"></i></div><div class="sm muted">Fit ${Math.round(recMult(r)*100)}% · ${r.off?"Offered":"No offer yet"} · ${S.pts} points left this week</div>${S.phase==="season"?`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`:""}`}
  <button class="btn" data-act="close" style="width:100%;margin-top:14px">Close</button>`;render();}
 
+/* ============ real rosters import ============ */
+function statsAdjust(p,s){if(!s||s[0]<5)return;const x=p.x,bl=(k,v,w)=>x[k]=clamp(Math.round(x[k]*(1-w)+v*w),20,99),[g,mp,pt,rb,as,stl,bk,fg,tp,tpa,ft]=s;
+ if(tpa>=1.5)bl("thr",50+(tp-.3)*250+Math.min(tpa,7)*2,.6);else if(tpa<.4)x.thr=Math.min(x.thr,52);
+ bl("reb",38+rb*5,.5);bl("pas",44+as*7,.5);bl("stl",44+stl*18,.5);bl("blk",40+bk*16,.5);bl("fin",x.fin+(fg-.45)*80,.5);if(ft>0)bl("mid",x.mid+(ft-.7)*40,.4);}
+function applyRosters(d){let n=0;const off=[8,6,5,4,3,1,0,-2,-4,-6,-8,-10,-12,-13,-14];
+ S.teams.forEach(t=>{const L=d.teams[t.name];if(!L||L.length<5)return;n++;const base=42+t.pr*.36,list=L.map(r=>r.slice()).sort((a,b)=>b[7]-a[7]).slice(0,15);
+  const guards=list.filter(r=>r[2]==="G").sort((a,b)=>((b[8]?b[8][4]:0)-(a[8]?a[8][4]:0))||((a[3]||75)-(b[3]||75)));guards.forEach((r,i)=>r.pp=i<Math.max(1,Math.round(guards.length*.4))?"PG":"SG");
+  const posOf=r=>{if(r.pp)return r.pp;const p=r[2],h=r[3]||78;if(["PG","SG","SF","PF","C"].includes(p))return p;if(p==="F")return h>=80?"PF":"SF";return h<76?"SG":h<80?"SF":"PF";};
+  t.roster=list.map((r,i)=>{const P=posOf(r),yr=r[4]||2,ovr=Math.round(clamp(base+off[i]+gauss()*1.5+(r[7]>=45?3:0),25,95)),[fn,ln]=splitName(r[0]);
+   const p={id:S.pid++,fn,ln,pos:P,yr,r:makeRatings(P,ovr),s:z(),num:r[1]||undefined,real:1};p.ovr=calcOvr(p);p.pot=clamp(p.ovr+Math.round((4-yr)*(2+R()*4)+gauss()*2),p.ovr,99);
+   if(r[3])p.ht=r[3];genX(p);if(r[3])p.ht=r[3];statsAdjust(p,r[8]);
+   if(r[5]){const us=r[6]&&r[6].length===2;p.home=r[6]?`${r[5]}, ${r[6]}`:r[5];p.school=us?genSchool(r[5],r[6],0):"";p.sv=2;}else{p.home="";p.school="";p.sv=2;}
+   return p;});});return n;}
+function rosterImport(file){if(!file||!S)return;if(!(S.phase==="season"&&S.day===0)){toast("Load real rosters before the first game of a season");return;}
+ const fr=new FileReader();fr.onload=()=>{try{const d=JSON.parse(fr.result);if(!d||d.type!=="hardwood-rosters"||!d.teams)throw 0;const n=applyRosters(d);if(!n)throw 0;
+  calcStr();S.teams.forEach(t=>{t.elo=1500+(STR[t.id]-62)*22;});S.pollPrev={};computePoll();S.awards={year:S.year,pre:makeAwards(true),post:null};S.realRosters=d.label||"Real";
+  news(`Real ${d.label||""} rosters loaded for ${n} teams.`);try{newsOff("preseason");}catch(e){}save();render();toast(`Loaded real rosters for ${n} teams`);}catch(e){toast("That isn't a Hardwood rosters file");}};fr.readAsText(file);}
+
 /* ============ live game ============ */
 let LG=null;
 const RIMY=[5.25,88.75];
@@ -959,7 +978,7 @@ function openPregame(g){const home=g.h===S.user,u=T(S.user),opp=T(home?g.a:g.h),
 function startLive(gid){const g=G(gid);if(!g||g.done||LG)return;UI.modal=null;render();
  const home=g.h===S.user,teams=[T(S.user),T(home?g.a:g.h)],o=S.playOpts;
  LG={g,home,teams,score:[0,0],half:1,halfLen:o.half*60,clock:o.half*60,otLen:60,shot:20,ot:0,diff:DIFF[o.diff],time:0,dead:0,off:0,ctl:0,msg:"",msgT:0,pl:[],B:{state:"held",own:0,x:25,y:47,z:0},inp:{jx:0,jy:0,turbo:false,shoot:false,pass:false},keys:{},charge:null,shooting:null,lastPass:null,over:false,paused:false,stCool:0,first:R()<.5?0:1,hold:0,aiT:0,ht:null,pend:false,chase:new Set()};
- teams.forEach((t,ti)=>{playable(t).slice(0,5).sort((a,b)=>POS.indexOf(a.pos)-POS.indexOf(b.pos)).forEach((p,i)=>{const ath=X(p).spd;LG.pl.push({p,t:ti,i,idx:LG.pl.length,x:25,y:47,vx:0,vy:0,spd:11+(ath-55)*.1,opt:0,optT:R()*3,st:{pts:0,reb:0,ast:0},num:(p.id*7)%35+1});});});
+ teams.forEach((t,ti)=>{playable(t).slice(0,5).sort((a,b)=>POS.indexOf(a.pos)-POS.indexOf(b.pos)).forEach((p,i)=>{const ath=X(p).spd;LG.pl.push({p,t:ti,i,idx:LG.pl.length,x:25,y:47,vx:0,vy:0,spd:11+(ath-55)*.1,opt:0,optT:R()*3,st:{pts:0,reb:0,ast:0},num:p.num||((p.id*7)%35+1)});});});
  const ht=teams[home?0:1],at=teams[home?1:0];LG.col=[];
  LG.col[home?0:1]={f:"#"+ht.c1,s:"#"+ht.c2,n:contrast(ht.c1,ht.c2)>=2.5?"#"+ht.c2:(lum(ht.c1)>.4?"#111111":"#ffffff")};
  LG.col[home?1:0]={f:"#f4f3ee",s:"#"+at.c1,n:lum(at.c1)>.6?"#111111":"#"+at.c1};
@@ -1308,6 +1327,7 @@ document.addEventListener("change",e=>{const el=e.target,a=el.dataset.act;
  if(a==="rint"){UI.rInt=el.value;render();}
  if(a==="rsort"){UI.rSort=el.value;render();}
  if(a==="importdyn"){importFile(el.files&&el.files[0]);el.value="";}
+ if(a==="rosterfile"){rosterImport(el.files&&el.files[0]);el.value="";}
  if(a==="cstyle"){S.coach[el.dataset.k]=el.value;save();render();}
 });
 document.addEventListener("keydown",e=>{if(e.key==="Escape"&&UI.modal){UI.modal=null;render();}});
