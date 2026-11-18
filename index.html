@@ -874,7 +874,7 @@ function officeView(){const c=S.coach,u=T(S.user);let h=`<h2>${esc(c.name)}</h2>
  h+=styleSection()+`<h2>Assistant coaches</h2><p class="sm muted" style="margin-top:-4px">Staff budget ${money(cost)} of ${money(bud)}.</p><div class="list">${ROLES.map(role=>{const s=S.staff[role];return `<div class="li"><div class="grow"><div style="font-weight:600">${role}: ${s?esc(s.fn+" "+s.ln):"<span class='muted'>Vacant</span>"}</div><div class="sm muted">${ROLEDESC[role]}${s?` · Rating ${s.r} · ${money(salary(s.r))}`:""}</div></div>${s?`<button class="btn sm" data-act="fire" data-v="${role}">Fire</button>`:""}</div>`;}).join("")}</div>
  <h3 style="margin-top:14px">Available to hire</h3><div class="list">${S.pool.map((s,i)=>{const cur=S.staff[s.role],after=cost-(cur?salary(cur.r):0)+salary(s.r);return `<div class="li"><div class="grow"><div>${esc(s.fn+" "+s.ln)} <span class="tag">${s.role}</span></div><div class="sm muted">Rating ${s.r} · ${money(salary(s.r))}${cur?` · replaces ${esc(cur.ln)}`:""}</div></div><button class="btn sm pri" data-act="hire" data-v="${i}" ${after>bud?"disabled":""}>Hire</button></div>`;}).join("")}</div>
  <h2>Teams and coaches</h2><p class="sm muted" style="margin-top:-4px">Rename players and coaches, or paste in a real roster for any team. Real head coaches are loaded as of fall 2026.</p><div class="btns"><button class="btn pri" data-act="openeditor">Open the editor</button><button class="btn" data-act="realcoaches">Load real head coaches</button></div>
- <h2>Real rosters</h2><p class="sm muted" style="margin-top:-4px">${S.realRosters?`Loaded: ${esc(S.realRosters)} rosters. `:""}Load a Hardwood rosters file to fill every team with its real players, using real heights, classes, hometowns and last season's stats to set their ratings. Works before the first game of a season.</p><div class="btns"><label class="btn ${S.phase==="season"&&S.day===0?"pri":""}" style="cursor:pointer">Load rosters file<input type="file" accept=".json,application/json" data-act="rosterfile" hidden></label></div>
+ <h2>Real rosters</h2><p class="sm muted" style="margin-top:-4px">${S.realRosters?`Loaded: ${esc(S.realRosters)} rosters. `:""}Load a Hardwood rosters file to fill every team with its real players, using real heights, classes, hometowns and last season's stats to set their ratings. Works before the first game of a season.</p><div class="btns">${ONSITE?`<button class="btn ${S.phase==="season"&&S.day===0?"pri":""}" data-act="siterosters">Load rosters from my site</button>`:""}<label class="btn ${S.phase==="season"&&S.day===0&&!ONSITE?"pri":""}" style="cursor:pointer">Load rosters file<input type="file" accept=".json,application/json" data-act="rosterfile" hidden></label></div>
  <h2>Settings</h2><div class="btns"><button class="btn" data-act="mydyn">My dynasties</button><button class="btn" data-act="newgame">Start a new dynasty</button><button class="btn" data-act="exportdyn" data-v="${S.slot}">Export this dynasty</button></div><p class="sm muted">Your dynasty saves automatically on this device. Starting a new one keeps this one; manage them all from My dynasties.</p>`;
  return h;}
 
@@ -955,6 +955,15 @@ function applyRosters(d){let n=0;const off=[8,6,5,4,3,1,0,-2,-4,-6,-8,-10,-12,-1
    if(r[3])p.ht=r[3];genX(p);if(r[3])p.ht=r[3];statsAdjust(p,r[8]);
    if(r[5]){const us=r[6]&&r[6].length===2;p.home=r[6]?`${r[5]}, ${r[6]}`:r[5];p.school=us?genSchool(r[5],r[6],0):"";p.sv=2;}else{p.home="";p.school="";p.sv=2;}
    return p;});});return n;}
+function useRosters(d){if(!d||d.type!=="hardwood-rosters"||!d.teams)return false;const n=applyRosters(d);if(!n)return false;
+ calcStr();S.teams.forEach(t=>{t.elo=1500+(STR[t.id]-62)*22;});S.pollPrev={};computePoll();S.awards={year:S.year,pre:makeAwards(true),post:null};S.realRosters=d.label||"Real";
+ news(`Real ${d.label||""} rosters loaded for ${n} teams.`);try{newsOff("preseason");}catch(e){}save();render();toast(`Loaded real rosters for ${n} teams`);return true;}
+const ONSITE=/^https?:$/.test(location.protocol)&&!/claude/.test(location.hostname);
+async function siteRosters(){if(!S)return;if(!(S.phase==="season"&&S.day===0)){toast("Load real rosters before the first game of a season");return;}
+ const names=[];for(let y=S.year;y>=2026;y--)names.push(`hardwood-rosters-${y}-${String((y+1)%100).padStart(2,"0")}.json`);names.push("rosters.json");
+ toast("Looking for rosters on your site…");
+ for(const f of names){try{const r=await fetch(f,{cache:"no-cache"});if(!r.ok)continue;const d=await r.json();if(useRosters(d))return;}catch(e){}}
+ toast("No rosters file found on your site");}
 function rosterImport(file){if(!file||!S)return;if(!(S.phase==="season"&&S.day===0)){toast("Load real rosters before the first game of a season");return;}
  const fr=new FileReader();fr.onload=()=>{try{const d=JSON.parse(fr.result);if(!d||d.type!=="hardwood-rosters"||!d.teams)throw 0;const n=applyRosters(d);if(!n)throw 0;
   calcStr();S.teams.forEach(t=>{t.elo=1500+(STR[t.id]-62)*22;});S.pollPrev={};computePoll();S.awards={year:S.year,pre:makeAwards(true),post:null};S.realRosters=d.label||"Real";
@@ -1289,6 +1298,7 @@ document.addEventListener("click",e=>{
  if(a==="openeditor"){openEditor(S.user);return;}
  if(a==="story"){openStory(+v);return;}
  if(a==="live"){playLive();return;}
+ if(a==="siterosters"){siteRosters();return;}
  if(a==="team"){openTeam(+v);return;}
  if(a==="recprof"){openRecruit(+v);return;}
  if(a==="lgstart"){startLive(+v);return;}
