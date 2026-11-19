@@ -317,6 +317,7 @@ function newGame(teamIdx,coachName){
  save();
 }
 function startSeason(first){
+ S.teams.forEach(realignTeam);S.earlySigned=0;S.reclassed=0;S.apS={};
  S.day=0;S.phase="season";S.step=0;S.games=[];S.created={};S.mte=[];S.ct={};S.ncaa=null;S.week=0;
  S.nit=null;S.selSeen=false;S.teams.forEach(t=>{t.w=t.l=t.cw=t.cl=0;t.tb={rd:-2,seed:0};if(t.id!==S.user)depth(t).forEach((p,i)=>{if(i>=10&&p.yr===1&&!p.rsUsed&&R()<.5)p.rs=1;});});
  calcStr();S.teams.forEach(t=>{const fresh=1500+(STR[t.id]-62)*22;t.elo=first?fresh:Math.round(t.elo*.4+fresh*.6);});
@@ -369,8 +370,8 @@ const G=id=>S.games[id];
 /* ============ game simulation ============ */
 function simGame(g){
  const h=T(g.h),a=T(g.a),sh=STR[g.h],sa=STR[g.a];
- const Ha=TAG[g.h]||teamAgg(h),Aa=TAG[g.a]||teamAgg(a),hS=styleOf(h),aS=styleOf(a),m=(sh-sa)*.95+(g.n?0:3.5)+styleEdge(Ha,hS,Aa,aS)-styleEdge(Aa,aS,Ha,hS),tot=138+(sh+sa-130)*.35+PACE[hS.off]+PACE[aS.off]+(hS.def==="Full-court press"?3:0)+(aS.def==="Full-court press"?3:0);
- const fh=fatigue(h,g.d),fa=fatigue(a,g.d),mm=m-(fh-fa)*.7,nz=/^NCAA|National/.test(g.ev)?7.2:8;
+ const Ha=TAG[g.h]||teamAgg(h),Aa=TAG[g.a]||teamAgg(a),hS=styleOf(h),aS=styleOf(a),m=(sh-sa)*.95+(g.n?0:hcaOf(h))+styleEdge(Ha,hS,Aa,aS)-styleEdge(Aa,aS,Ha,hS),tot=138+(sh+sa-130)*.35+PACE[hS.off]+PACE[aS.off]+(hS.def==="Full-court press"?3:0)+(aS.def==="Full-court press"?3:0);
+ const fh=fatigue(h,g.d),fa=fatigue(a,g.d),mm=m-(fh-fa)*.7,nz=(/^NCAA|National/.test(g.ev)?7.2:8)*Math.sqrt((VAR[hS.off]||1)*(VAR[aS.off]||1));
  let hs=Math.max(38,Math.round((tot+mm)/2+gauss()*nz)),as=Math.max(38,Math.round((tot-mm)/2+gauss()*nz)),ot=0;
  while(hs===as){hs+=ri(4,14);as+=ri(4,14);ot++;}
  g.hs=hs;g.as=as;g.ot=ot;g.done=1;g.hr=rankOf(g.h);g.ar=rankOf(g.a);
@@ -434,17 +435,17 @@ function mteAdvance(d){S.mte.forEach(m=>{
 });}
 function confStand(cf){return S.teams.filter(t=>t.conf===cf).sort((a,b)=>((b.cw/(b.cw+b.cl||1))-(a.cw/(a.cw+a.cl||1)))||(b.w-a.w)||(b.elo-a.elo));}
 function bracketOrder(n){let a=[1,2];while(a.length<n){const L=a.length*2,nx=[];a.forEach(s=>nx.push(s,L+1-s));a=nx;}return a;}
-function setupCT(){[...new Set(S.teams.map(t=>t.conf))].forEach(cf=>{const st=confStand(cf),n=st.length;let size=2;while(size<n)size*=2;const rounds=Math.log2(size);
+function setupCT(){[...new Set(S.teams.map(t=>t.conf))].forEach(cf=>{const st=confStand(cf).slice(0,CTSIZE[cf]||99),n=st.length;let size=2;while(size<n)size*=2;const rounds=Math.log2(size);
  const seed={};st.forEach((t,i)=>seed[t.id]=i+1);
  S.ct[cf]={e:bracketOrder(size).map(s=>s<=n?st[s-1].id:null),seed,round:0,rounds,start:CTN-rounds+1,champ:null,hist:[]};});
- const u=T(S.user);news(`${u.name} finished ${u.cw}-${u.cl} in the ${u.conf}, earning the No. ${S.ct[u.conf].seed[u.id]} seed in the conference tournament.`);}
+ const u=T(S.user);news(S.ct[u.conf].seed[u.id]?`${u.name} finished ${u.cw}-${u.cl} in the ${u.conf}, earning the No. ${S.ct[u.conf].seed[u.id]} seed in the conference tournament.`:`${u.name} finished ${u.cw}-${u.cl} in the ${u.conf} and missed the ${CTSIZE[u.conf]}-team conference tournament.`);}
 function ctAdvance(d){Object.keys(S.ct).forEach(cf=>{const c=S.ct[cf];if(c.champ!==null||c.start+c.round!==d||!c.cur)return;
  c.hist.push(c.cur);c.e=c.cur.map(([x,y,g])=>g!==null?winner(G(g)):(x!==null?x:y));c.round++;c.cur=null;
  if(c.e.length===1){c.champ=c.e[0];if(c.champ===S.user||rankOf(c.champ)<=10&&rankOf(c.champ))news(`${T(c.champ).name} wins the ${cf} Tournament and an automatic bid.`);}});}
 function selection(){
  computePoll();
  const autos=Object.values(S.ct).map(c=>c.champ),aset=new Set(autos);
- const sc=t=>pollScore(t);
+ const sc=t=>selScore(t);
  const atlAll=keySort(S.teams.filter(t=>!aset.has(t.id)),sc).map(t=>t.id),atl=atlAll.slice(0,36);
  const autoS=keySort(autos.map(T),sc).map(t=>t.id);
  const low=autoS.slice(-4),lastA=atl.slice(-4);
@@ -454,6 +455,7 @@ function selection(){
  lines.push([rest[40],rest[41],PI(lastA[0],lastA[1],11),PI(lastA[2],lastA[3],11)]);
  for(let l=0;l<4;l++)lines.push(rest.slice(42+l*4,46+l*4));
  lines.push([rest[58],rest[59],PI(low[0],low[1],16),PI(low[2],low[3],16)]);
+ {const used=[{},{},{},{}];for(let li=0;li<4;li++){const ln=lines[li],order=li%2?[3,2,1,0]:[0,1,2,3];let best=ln,bc=1e9;perms(ln).forEach(pm=>{let c=0;pm.forEach((id,k)=>{if(id>=0&&used[order[k]][T(id).conf])c+=10;if(id!==ln[k])c+=.1;});if(c<bc){bc=c;best=pm;}});lines[li]=best;best.forEach((id,k)=>{if(id>=0)used[order[k]][T(id).conf]=1;});}}
  const reg=[[],[],[],[]],seedMap={};
  lines.forEach((ln,li)=>{const order=li%2?[3,2,1,0]:[0,1,2,3];ln.forEach((e,k)=>{const r=order[k],pos=SEEDORD.indexOf(li+1);reg[r][pos]=e;
   if(e<0){const p=pi[-e-1];p.reg=r;p.pos=pos;seedMap[p.a]=seedMap[p.b]=li+1;}else seedMap[e]=li+1;});});
@@ -467,7 +469,7 @@ function selection(){
  S.nit={e:bracketOrder(32).map(s=>nitIds[s-1]),seed:ns,round:0,rounds:5,start:FF+1,champ:null,hist:[],cur:null};
  if(ns[S.user])news(`${u.name} accepted a No. ${ns[S.user]} seed in the NIT.`);
 }
-function computePoll(){const prev={};S.poll.forEach((id,i)=>prev[id]=i+1);S.pollPrev=prev;S.poll=keySort(S.teams,pollScore).slice(0,25).map(t=>t.id);}
+function computePoll(){computeNET();const prev={};S.poll.forEach((id,i)=>prev[id]=i+1);S.pollPrev=prev;S.apS=S.apS||{};S.teams.forEach(t=>{const cur=pollScore(t)+(S.netV[t.id]||0)*2;S.apS[t.id]=S.apS[t.id]===undefined?cur:S.apS[t.id]*.5+cur*.5;});S.poll=keySort(S.teams,t=>S.apS[t.id]).slice(0,25).map(t=>t.id);}
 
 /* ============ recruiting ============ */
 const STARB={5:[74,80,90,98],4:[66,73,81,91],3:[57,64,70,80],2:[48,56,59,69],1:[42,50,52,62]};
@@ -476,14 +478,14 @@ function genRecruits(){
  Object.entries(counts).forEach(([st,c])=>{st=+st;const b=STARB[st];for(let i=0;i<c;i++){const pos=pick(POS),t=ri(b[0],b[1]);
   const r={id:S.pid++,fn:pick(FIRST),ln:pick(LASTN),pos,st,hs:wstate(),r:makeRatings(pos,t),s:z(),yr:1,int:0,off:0,to:null,aw:-1,vis:0};r.ovr=calcOvr(r);r.pot=Math.max(r.ovr+3,ri(b[2],b[3]));genX(r);r.city=pick(CITY[r.hs]);r.school=genSchool(r.city,r.hs,st);r.sv=2;
   r.int=Math.round(clamp((u.pr-(st*15+10))*.6+R()*25,0,60));S.recruits.push(r);}});
- S.recruits.sort((a,b)=>(b.pot*.6+b.ovr*.4)-(a.pot*.6+a.ovr*.4));S.recruits.forEach((r,i)=>r.rk=i+1);S.cv=5;recProfiles();
+ S.recruits.forEach(r=>{if(R()<.05)makeIntl(r);});S.recruits.sort((a,b)=>(b.pot*.6+b.ovr*.4)-(a.pot*.6+a.ovr*.4));S.recruits.forEach((r,i)=>r.rk=i+1);S.cv=5;recProfiles();S.recruits.forEach(r=>{if(r.intl)r.school="";});
 }
 function recMult(r){return clamp((T(S.user).pr+15)/(r.st*16+20),.15,1.6);}
 function ptsPerWeek(){return Math.round(40+T(S.user).pr*.6+staffFx("Recruiting"));}
 function myCommits(){return S.recruits.filter(r=>r.to===S.user);}
 function schAvail(){const u=T(S.user);return 15-u.roster.filter(p=>p.yr<4).length-myCommits().length;}
 function recruitWeek(){
- S.week++;S.pts=ptsPerWeek();weeklyMorale();nilRequests();decommits();autoRecruit();
+ S.week++;S.pts=ptsPerWeek();weeklyMorale();nilRequests();decommits();recruitCalendar();autoRecruit();
  S.recruits.forEach(r=>{if(r.to!==null)return;if(r.nilOff)r.int=Math.min(100,r.int+Math.round(r.nilOff/RVAL[r.st]*3*recMult(r)));
   if(r.off&&r.int>=100&&schAvail()>0){r.to=S.user;news(`🖊️ ${r.st}★ ${r.pos} ${r.fn} ${r.ln} (#${r.rk}) committed to ${T(S.user).name}!`);return;}
   const p=({5:.025,4:.03,3:.03,2:.025,1:.02})[r.st]*(1+S.week/9);
@@ -535,10 +537,11 @@ function advanceStep(){
  S.step++;save();render();
 }
 function carousel(){
- S.vac=[];S.carousel=[];S.fired=false;const c=S.coach;
+ S.vac=[];S.carousel=[];S.fired=false;const c=S.coach;S.wd=S.wd||[];
  S.teams.forEach(t=>{if(t.id===S.user)return;const co=t.coach,g=t.w+t.l,p=g?t.w/g:.5;if(co.cw!==undefined){co.cw+=t.w;co.cl+=t.l;if(t.tb.seed)co.ncaa++;if(t.tb.rd>=2)co.s16++;if(t.tb.rd>=4)co.ff++;if(t.tb.rd===6)co.ch++;}co.seat=co.seat*.5+(p-expW(t))+Math.max(0,t.tb.rd)*.03;co.yrs++;co.r=clamp(co.r+(co.seat>0?1:-1),25,97);
   if((co.yrs>=2&&co.seat<-.12&&R()<.6)||R()<.03){S.vac.push(t.id);S.carousel.push(`${t.name} parted ways with ${co.fn} ${co.ln}.`);t.coach=null;t.fired=1;}else t.fired=0;});
  if(c.sec<15&&c.yrsHere>=2){S.fired=true;news(`${T(S.user).name} fired ${c.name} after ${c.yrsHere} seasons.`);}
+ contractCheck();poachStaff();
  let pool=S.vac.filter(id=>T(id).pr<=c.rep+12&&T(id).pr>=c.rep-35);
  if(S.fired&&pool.length<2){keySort(S.teams.filter(t=>t.id!==S.user&&t.pr<c.rep-5&&t.coach),t=>-Math.abs(t.pr-(c.rep-15))).slice(0,3).forEach(t=>{S.carousel.push(`${t.name}'s ${t.coach.fn} ${t.coach.ln} retired.`);t.coach=null;t.fired=1;S.vac.push(t.id);pool.push(t.id);});}
  S.offers=keySort(shuffle(pool).slice(0,6).map(T).filter(()=>R()<.75||S.fired),t=>t.pr).slice(0,4).map(t=>t.id);
@@ -546,7 +549,7 @@ function carousel(){
 }
 function takeJob(id){const old=S.user,c=S.coach;
  T(old).coach=null;T(old).fired=1;S.vac.push(old);S.vac=S.vac.filter(x=>x!==id);
- S.user=id;T(id).coach=null;c.sec=70;c.yrsHere=0;S.fired=false;
+ S.user=id;T(id).coach=null;c.sec=70;c.yrsHere=0;S.fired=false;c.ctr={y:5,sal:salFor(T(id).pr)};
  S.recruits.forEach(r=>{if(r.to===null){r.off=0;r.int=Math.round(clamp((T(id).pr-(r.st*15+10))*.6+R()*25,0,60));}});
  news(`📋 ${c.name} is the new head coach at ${T(id).name}.`);S.carousel.unshift(`${c.name} left ${T(old).name} for ${T(id).name}.`);
  S.offers=[];advanceStep();}
@@ -563,26 +566,29 @@ function departures(){
  S.nbaAll=[];S.portal=[];const dpool=[];const mine={grad:[],nba:[],portal:[]};
  S.teams.forEach(t=>{const d=depth(t),keep=[];d.forEach((p,i)=>{
   if(p.yr>=4&&!p.rs){if(t.id===S.user)mine.grad.push(p);leave(p,t);if(p.ovr>=72)dpool.push([p,t]);return;}
-  if(p.ovr>=82&&R()<(p.ovr-80)*.13+(p.yr>=3?.08:0)){if(t.id===S.user)mine.nba.push(p);leave(p,t);dpool.push([p,t]);S.nbaAll.push([p.fn+" "+p.ln,t.id,p.ovr]);if(p.ovr>=84)news(`${p.fn} ${p.ln} (${t.name}) declared for the NBA Draft.`);return;}
+  const dec=p.ovr>=82&&R()<(p.ovr-80)*.13+(p.yr>=3?.08:0);
+  if(dec&&p.ovr<84&&p.yr<4&&R()<.4){if(t.id===S.user)mine.nba.push(p);careerAdd(p,t);p.s=z();S.wd=S.wd||[];S.wd.push([p,t.id]);news(`${p.fn} ${p.ln} (${t.name}) entered the NBA Draft process and is testing the waters.`);return;}
+  if(dec){if(t.id===S.user)mine.nba.push(p);leave(p,t);dpool.push([p,t]);S.nbaAll.push([p.fn+" "+p.ln,t.id,p.ovr]);if(p.ovr>=84)news(`${p.fn} ${p.ln} (${t.name}) declared for the NBA Draft.`);return;}
   let pc=portalRisk(p,t,i);
   if(R()<pc){careerAdd(p,t);p.s=z();S.portal.push({p,from:t.id,ask:nilAsk(p)});if(t.id===S.user)mine.portal.push(p);return;}
   keep.push(p);});t.roster=keep;});
- addD2Portal();S.portal.sort((a,b)=>b.p.ovr-a.p.ovr);S.dep=mine;if(S.nil===undefined)S.nil=nilBudget();runDraft(dpool);
+ addD2Portal();S.portal.forEach(e=>e.bids=e.p.ovr>=72?ri(3,8):e.p.ovr>=64?ri(1,4):ri(0,2));S.portal.sort((a,b)=>b.p.ovr-a.p.ovr);S.dep=mine;if(S.nil===undefined)S.nil=nilBudget();runDraft(dpool);
 }
-function portalOffer(pid){const i=S.portal.findIndex(x=>x.p.id===pid);if(i<0)return;const e=S.portal[i],u=T(S.user);
+function portalOffer(pid,m){m=m||1;const i=S.portal.findIndex(x=>x.p.id===pid);if(i<0)return;const e=S.portal[i],u=T(S.user);
  if(u.roster.length+myCommits().length>=15){toast("Roster is full (15)");return;}
- if(S.nil<e.ask){toast("Not enough NIL budget");return;}
- const ch=portalChance(e);S.portal.splice(i,1);
- if(R()<ch){S.nil-=e.ask;e.p.s=z();u.roster.push(e.p);toast(`${e.p.fn} ${e.p.ln} is transferring in!`);news(`🔁 ${e.p.pos} ${e.p.fn} ${e.p.ln} (${e.p.ovr} OVR) transferred from ${fromName(e)} to ${u.name}.`);S.nilDeals=S.nilDeals||{};S.nilDeals[e.p.id]=nilAskOf(e.p);}
+ const cost=Math.round(e.ask*m);if(S.nil<cost){toast("Not enough NIL budget");return;}
+ const ch=portalChance(e,m);S.portal.splice(i,1);
+ if(R()<ch){S.nil-=cost;e.p.s=z();u.roster.push(e.p);toast(`${e.p.fn} ${e.p.ln} is transferring in!`);news(`🔁 ${e.p.pos} ${e.p.fn} ${e.p.ln} (${e.p.ovr} OVR) transferred from ${fromName(e)} to ${u.name}.`);S.nilDeals=S.nilDeals||{};S.nilDeals[e.p.id]=nilAskOf(e.p);}
  else toast(`${e.p.fn} ${e.p.ln} chose another school`);
  save();render();}
-function portalChance(e){return clamp(.4+(T(S.user).pr-(e.p.ovr-8))/55+(e.from===S.user?-.5:0),.05,.95);}
+function portalChance(e,m){m=m||1;return clamp((.4+(T(S.user).pr-(e.p.ovr-8))/55+(e.from===S.user?-.5:0))*(1+(m-1)*1.6)*(1-.05*(e.bids||0)),.03,.95);}
 function portalFill(){
  const order=keySort(S.teams.filter(t=>t.id!==S.user),t=>t.pr+R()*20);
  for(let pass=0;pass<3&&S.portal.length;pass++)order.forEach(t=>{if(t.roster.length>=13||!S.portal.length)return;const k=S.portal.findIndex(e=>e.from!==t.id&&e.p.ovr<=t.pr*.4+52);if(k<0)return;const e=S.portal.splice(k,1)[0];e.p.s=z();t.roster.push(e.p);});
  S.portal=[];
 }
 function signing(){
+ (S.wd||[]).forEach(([p,tid])=>{const tm=T(tid);if(tm.roster.length<15){tm.roster.push(p);news(`↩️ ${p.fn} ${p.ln} withdrew from the NBA Draft and returns to ${tm.name}.`);}});S.wd=[];
  S.signed=[];const pend={};S.recruits.forEach(r=>{if(r.to!==null){pend[r.to]=(pend[r.to]||0)+1;}});
  const free=S.recruits.filter(r=>r.to===null);
  const order=keySort(S.teams.filter(t=>t.id!==S.user),t=>t.pr+R()*15);
@@ -592,11 +598,11 @@ function signing(){
  const mine=S.signed.filter(r=>r.to===S.user);
  news(`Signing day: ${T(S.user).name} signed ${mine.length} recruit${mine.length===1?"":"s"}${mine.length?" ("+mine.map(r=>r.st+"★").join(", ")+")":""}.`);
 }
-function progress(p,dev){X(p);const o0=p.ovr,gain=Math.max(0,p.pot-p.ovr)*(.2+R()*.25)*dev+gauss()*1.1;p.r=p.r.map(v=>clamp(Math.round(v+gain+gauss()*1.5),20,99));p.ovr=calcOvr(p);if(p.ovr>p.pot)p.pot=p.ovr;const dg=p.ovr-o0;XK.forEach(k=>p.x[k]=clamp(Math.round(p.x[k]+dg+gauss()*1.3),20,99));}
+function progress(p,dev){X(p);traits(p);if(p.arc==="bust"&&R()<.3)p.pot=Math.max(p.ovr,p.pot-ri(2,6));const o0=p.ovr,gain=Math.max(0,p.pot-p.ovr)*(.2+R()*.25)*dev*WEMULT[p.we-1]*arcMult(p)+gauss()*1.1;p.r=p.r.map(v=>clamp(Math.round(v+gain+gauss()*1.5),20,99));p.ovr=calcOvr(p);if(p.ovr>p.pot)p.pot=p.ovr;const dg=p.ovr-o0;XK.forEach(k=>p.x[k]=clamp(Math.round(p.x[k]+dg+gauss()*1.3),20,99));}
 function newSeason(){
  S.year++;S.coach.yrs=(S.coach.yrs||0)+1;
  S.teams.forEach(t=>{const dev=t.id===S.user?staffFx("Development"):1+((t.coach?t.coach.r:60)-60)/200;t.roster.forEach(p=>{careerAdd(p,t,S.year-1);progress(p,dev);if(p.rs){p.rs=0;p.rsUsed=1;}else p.yr++;p.s=z();p.inj=0;p.mor=70;p.nilPaid=0;p.asked=0;});});
- S.signed.forEach(r=>{const t=T(r.to);if(r.to===S.user&&r.nilOff){S.nilDeals=S.nilDeals||{};S.nilDeals[r.id]=r.nilOff;}const p={id:r.id,fn:r.fn,ln:r.ln,pos:r.pos,yr:1,r:r.r,ovr:r.ovr,pot:r.pot,s:z(),st:r.st,x:r.x,ht:r.ht,home:r.city?r.city+", "+r.hs:undefined,school:r.school,sv:2};t.roster.push(p);});
+ S.signed.forEach(r=>{const t=T(r.to);if(r.to===S.user&&r.nilOff){S.nilDeals=S.nilDeals||{};S.nilDeals[r.id]=r.nilOff;}const p={id:r.id,fn:r.fn,ln:r.ln,pos:r.pos,yr:1,r:r.r,ovr:r.ovr,pot:r.pot,s:z(),st:r.st,x:r.x,ht:r.ht,we:r.we,arc:r.arc,home:r.city?r.city+", "+r.hs:undefined,school:r.school,sv:2};t.roster.push(p);});
  S.teams.forEach(t=>{while(t.roster.length<13)t.roster.push(newPlayer(pick(POS),36+t.pr*.15+gauss()*3,ri(1,2)));
   if(t.roster.length>15){const cut=depth(t).slice(15);if(t.id===S.user&&cut.length)news(`Roster trimmed to 15: released ${cut.map(p=>p.fn+" "+p.ln).join(", ")}.`);t.roster=depth(t).slice(0,15);}});
  S.signed=[];S.dep=null;S.review=null;S.carousel=[];S.vac=[];
@@ -677,7 +683,7 @@ function nilAnswer(pid,pay){const q=(S.req||[]).find(x=>x.pid===pid),f=findPlaye
  S.req=S.req.filter(x=>x!==q);save();render();}
 function reqPanel(){const R2=(S.req||[]).map(q=>[q,findPlayer(q.pid)]).filter(x=>x[1]);if(!R2.length)return "";
  return `<h2>Player requests</h2><div class="list">${R2.map(([q,[p]])=>`<div class="li" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.fn+" "+p.ln)}</b> <span class="sm muted">${p.pos}, ${p.ovr} OVR</span><div class="sm muted">Wants a ${money(q.ask)} NIL raise. ${3-(S.week-q.wk)} week${3-(S.week-q.wk)===1?"":"s"} to answer.</div></div><div class="btns" style="margin:0"><button class="btn sm pri" data-act="nilpay" data-v="${p.id}" ${S.nil<q.ask?"disabled":""}>Pay</button><button class="btn sm" data-act="nildeny" data-v="${p.id}">Decline</button></div></div>`).join("")}</div><p class="sm muted" style="margin:6px 0 0">NIL left this year: ${money(S.nil||0)}. Whatever you spend here comes out of your transfer portal budget.</p>`;}
-function decommits(){const u=T(S.user);S.recruits.forEach(r=>{if(r.to!==S.user||r.late)return;if(R()<.006+(u.l>u.w+2?.02:0)+(S.coach.sec<30?.02:0)){r.to=null;r.int=Math.max(20,r.int-35);news(`💔 ${r.st}★ ${r.fn} ${r.ln} decommitted from ${u.name}.`);}});}
+function decommits(){const u=T(S.user);S.recruits.forEach(r=>{if(r.to!==S.user||r.late||r.sgn)return;if(R()<.006+(u.l>u.w+2?.02:0)+(S.coach.sec<30?.02:0)){r.to=null;r.int=Math.max(20,r.int-35);news(`💔 ${r.st}★ ${r.fn} ${r.ln} decommitted from ${u.name}.`);}});}
 function autoRecruit(){if(!S.autoRec||S.phase!=="season")return;const need=schAvail();if(need<=0)return;const pool=S.recruits.filter(r=>r.to===null);
  const sc=r=>(r.pot*.6+r.ovr*.4)*Math.min(1,recMult(r))+r.int*.12;const tg=keySort(pool.filter(r=>recMult(r)>=.55||r.int>=50),sc).slice(0,need+3);
  pool.forEach(r=>{if(r.off&&!tg.includes(r))r.off=0;});tg.forEach(r=>{if(!r.off){r.off=1;r.int=Math.min(100,r.int+5);}});
@@ -788,7 +794,7 @@ function nilPanel(){const deals=Object.entries(S.nilDeals||{}).map(([id,a])=>[fi
 function leadersView(){const cat=UI.seg.ld||"pts",scope=UI.ldScope||"all",lab={pts:"Points",reb:"Rebounds",ast:"Assists",min:"Minutes"};
  const gp=Math.max(0,...S.teams.map(t=>t.w+t.l)),gmin=Math.max(3,Math.floor(gp*.5));let rows=[];
  S.teams.forEach(t=>{if(scope!=="all"&&t.conf!==scope)return;t.roster.forEach(p=>{if(p.s.g>=gmin)rows.push([p,t,p.s[cat]/p.s.g]);});});rows.sort((a,b)=>b[2]-a[2]);rows=rows.slice(0,25);
- return seg("ld",Object.entries(lab),cat)+`<select data-act="ldscope" aria-label="Scope" style="width:100%;margin:6px 0 10px"><option value="all">All Division I</option>${CONFS.map(c=>`<option ${c[0]===scope?"selected":""}>${esc(c[0])}</option>`).join("")}</select>`
+ return seg("ld",Object.entries(lab),cat)+`<select data-act="ldscope" aria-label="Scope" style="width:100%;margin:6px 0 10px"><option value="all">All Division I</option>${confNames().map(c=>`<option ${c===scope?"selected":""}>${esc(c)}</option>`).join("")}</select>`
   +(rows.length?`<div class="list">${rows.map(([p,t,v],i)=>`<button class="li" data-act="player" data-v="${p.id}"><span class="rk">${i+1}</span>${badge(t,28)}<div class="grow"><div style="${t.id===S.user?"font-weight:700":""}">${esc(p.fn+" "+p.ln)} <span class="tag">${p.pos}</span></div><div class="sm muted">${esc(t.name)}, ${cls(p)}</div></div><b class="num">${v.toFixed(1)}</b></button>`).join("")}</div><p class="sm muted">Per game, minimum ${gmin} games.</p>`:`<p class="muted">Leaders show up once games are played.</p>`);}
 function addD2Portal(){S.d2u=S.d2u||[];const used=new Set(S.d2u),src=(S.d2||[]).filter(x=>!used.has(x[0]));
  for(let i=0;i<30;i++){let nm,sch,pos,ht=0,yr,city="",st="",score;
@@ -803,6 +809,49 @@ function allTimeView(){const cnt={};CHAMPS.forEach(x=>{if(!x.cv)cnt[x.c]=(cnt[x.
  const top=Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,10),tm=n=>S.teams.find(t=>t.name===n);
  return `<h3 style="margin-top:14px">Most national titles</h3><div class="list">${top.map(([n,c],i)=>`<div class="li"><span class="rk">${i+1}</span>${tm(n)?badge(tm(n),26):""}<div class="grow">${esc(n)}</div><b class="num">${c}</b></div>`).join("")}</div>
  <p class="sm muted">Includes titles won in your dynasty.</p><h3 style="margin-top:14px">NCAA champions, 1939-2026</h3><div class="list">${CHAMPS.map(x=>`<div class="li" style="align-items:flex-start">${tm(x.c)?badge(tm(x.c),30):`<span style="width:30px"></span>`}<div class="grow"><div style="font-weight:600">${x.y}: ${esc(x.c)}${x.cv?" (vacated)":""} <span class="sm muted">${x.rec}</span></div><div class="sm muted">Beat ${esc(x.r)}${x.rv?" (appearance vacated)":""} · Coach ${esc(x.coach)}</div></div></div>`).join("")}</div><p class="sm muted">No tournament was held in 2020.</p>`;}
+
+/* ============ realism: realignment, NET, poll, home court, traits, calendar, contracts ============ */
+const REALIGN={"Little Rock":"UAC","Austin Peay":"UAC","Eastern Kentucky":"UAC","Tarleton State":"UAC","Abilene Christian":"UAC","North Alabama":"UAC","West Georgia":"UAC","Central Arkansas":"UAC","UT Arlington":"UAC","Southern Utah":"Big Sky","Utah Tech":"Big Sky","California Baptist":"Big West","Utah Valley":"Big West","Sacramento State":"Big West","UC Davis":"Mountain West","Denver":"West Coast","Tennessee Tech":"SoCon"};
+function realignTeam(t){const n=REALIGN[t.name];if(n)t.conf=n;else if(t.conf==="MAAC")t.conf="Metro";}
+function confNames(){const src=(typeof S!=="undefined"&&S&&S.teams)?S.teams:TEAMDEF,have=new Set(src.map(t=>t.conf)),out=CONFS.map(c=>c[0]==="MAAC"?"Metro":c[0]).filter(c=>have.has(c));have.forEach(c=>{if(!out.includes(c))out.push(c);});return out;}
+const CTSIZE={"Ivy League":4,"America East":8,"NEC":8,"Summit League":8,"MAC":8,"Big Ten":15,"ACC":15};
+const VAR={"Pace and space":1.12,"Run and gun":1.08,"Grind it out":.86,"Post-centric":.95,"Motion":1};
+const CSTYLE={"Rick Pitino":["Pace and space","Full-court press"],"Kelvin Sampson":["Grind it out","Man-to-man"],"Matt Painter":["Post-centric","Man-to-man"],"Nate Oats":["Run and gun","Switch everything"],"Mark Few":["Run and gun","Man-to-man"],"Bill Self":["Motion","Man-to-man"],"Tom Izzo":["Motion","Man-to-man"],"Shaka Smart":["Run and gun","Full-court press"],"Chris Beard":["Motion","Pack line"],"Mick Cronin":["Grind it out","Man-to-man"],"Dan Hurley":["Motion","Man-to-man"],"John Calipari":["Run and gun","Man-to-man"],"Scott Drew":["Pace and space","Switch everything"],"Rick Barnes":["Grind it out","Man-to-man"],"Todd Golden":["Pace and space","Switch everything"],"Tommy Lloyd":["Run and gun","Man-to-man"],"Jon Scheyer":["Pace and space","Switch everything"],"Ryan Odom":["Pace and space","Man-to-man"],"Greg Gard":["Post-centric","Pack line"],"Eric Musselman":["Pace and space","Switch everything"],"Kevin Willard":["Motion","Man-to-man"],"Brad Underwood":["Pace and space","Man-to-man"],"Grant McCasland":["Grind it out","Pack line"],"T.J. Otzelberger":["Motion","Full-court press"],"Ben McCollum":["Motion","Man-to-man"],"Mark Pope":["Pace and space","Man-to-man"],"Will Wade":["Run and gun","Man-to-man"]};
+function hcaOf(t){let h=0;for(const c of t.name)h=(h*31+c.charCodeAt(0))>>>0;return 2.6+t.pr*.012+(h%11)/10;}
+function computeNET(){const sum={},n={};S.teams.forEach(t=>{sum[t.id]=0;n[t.id]=0;});
+ S.games.forEach(g=>{if(!g.done)return;const ha=g.n?0:1.4,add=(me,op,ms,os,adj)=>{sum[me]+=clamp(ms-os,-25,25)+(T(op).elo-1500)/28-adj+(ms>os?1.5:-1.5);n[me]++;};add(g.h,g.a,g.hs,g.as,ha);add(g.a,g.h,g.as,g.hs,-ha);});
+ S.netV={};S.teams.forEach(t=>{const k=Math.min(1,n[t.id]/8),pri=(t.elo-1500)/28;S.netV[t.id]=n[t.id]?(sum[t.id]/n[t.id])*k+pri*(1-k):pri;});
+ S.netR={};keySort(S.teams,t=>S.netV[t.id]).forEach((t,i)=>S.netR[t.id]=i+1);}
+function quads(t){const q=[[0,0],[0,0],[0,0],[0,0]];if(!S.netR)return q;S.games.forEach(g=>{if(!g.done||(g.h!==t.id&&g.a!==t.id))return;const home=g.h===t.id,r=S.netR[home?g.a:g.h],cut=g.n?[50,100,200]:home?[30,75,160]:[75,135,240],qi=r<=cut[0]?0:r<=cut[1]?1:r<=cut[2]?2:3,won=home?g.hs>g.as:g.as>g.hs;q[qi][won?0:1]++;});return q;}
+function selScore(t){const q=quads(t);return (pollScore(t)-1500)/25+(S.netV?S.netV[t.id]:0)+q[0][0]*.9-q[3][1]*1.6-q[2][1]*.6;}
+function perms(a){if(a.length<2)return [a];const o=[];a.forEach((x,i)=>perms(a.slice(0,i).concat(a.slice(i+1))).forEach(p=>o.push([x].concat(p))));return o;}
+function netView(){if(!S.netR)computeNET();const L=keySort(S.teams,t=>S.netV[t.id]).slice(0,68);
+ return `<p class="sm muted">NET-style ranking: scoring margin adjusted for opponent and site. Q1 wins are home wins over the top 30, neutral over the top 50 and road over the top 75. The committee leans on it on Selection Sunday.</p><div class="list">${L.map((t,i)=>{const q=quads(t);return `<button class="li" data-act="team" data-v="${t.id}"><span class="rk">${i+1}</span>${badge(t,28)}<div class="grow"><div style="${t.id===S.user?"font-weight:700":""}">${esc(t.name)}</div><div class="sm muted">${rec(t)} · Q1 ${q[0][0]}-${q[0][1]}${q[3][1]?` · ${q[3][1]} Q4 loss${q[3][1]>1?"es":""}`:""}</div></div><b class="num">${(S.netV[t.id]>0?"+":"")+S.netV[t.id].toFixed(1)}</b></button>`;}).join("")}</div>`;}
+function matchTxt(o){const u=T(S.user),e=styleEdge(teamAgg(u),styleOf(u),teamAgg(o),styleOf(o))-styleEdge(teamAgg(o),styleOf(o),teamAgg(u),styleOf(u)),s=styleOf(o);return `${esc(s.off)} / ${esc(s.def)} · <b style="color:${e>=0?"var(--green,#16a34a)":"var(--red,#dc2626)"}">${e>=0?"+":""}${e.toFixed(1)} for you</b>`;}
+/* player development traits */
+const WEMULT=[.7,.85,1,1.12,1.25];
+function traits(p){if(p.we===undefined){p.we=wpick([1,2,3,4,5],k=>[1,2,4,2,1][k-1]);p.arc=wpick(["steady","early","late","bust"],a=>({steady:5,early:2,late:2,bust:1})[a]);}return p;}
+function arcMult(p){const y=p.yr;if(p.arc==="early")return y<=1?1.3:y===2?1:.7;if(p.arc==="late")return y<=1?.6:y<=3?1.45:1;if(p.arc==="bust")return .6;return 1;}
+function traitTxt(p){traits(p);return `Work ethic ${"★".repeat(p.we)}${"☆".repeat(5-p.we)} · ${({steady:"Steady developer",early:"Ready right away",late:"Late bloomer",bust:"Bust risk"})[p.arc]}`;}
+/* recruiting calendar */
+const INTL=[["Lagos","Nigeria"],["Dakar","Senegal"],["Melbourne","Australia"],["Sydney","Australia"],["Belgrade","Serbia"],["Toronto","Canada"],["Montreal","Canada"],["Madrid","Spain"],["Paris","France"],["Kaunas","Lithuania"],["Athens","Greece"],["Ljubljana","Slovenia"],["Istanbul","Turkey"],["Yaoundé","Cameroon"],["Auckland","New Zealand"]];
+function makeIntl(r){const c=pick(INTL);r.city=c[0];r.hs=c[1];r.school="";r.intl=1;}
+function makeRecruit(st){const b=STARB[st],pos=pick(POS),t=ri(b[0],b[1]),u=T(S.user);const r={id:S.pid++,fn:pick(FIRST),ln:pick(LASTN),pos,st,hs:wstate(),r:makeRatings(pos,t),s:z(),yr:1,int:0,off:0,to:null,aw:-1,vis:0};r.ovr=calcOvr(r);r.pot=Math.max(r.ovr+3,ri(b[2],b[3]));genX(r);r.city=pick(CITY[r.hs]);r.school=genSchool(r.city,r.hs,st);r.sv=2;r.int=Math.round(clamp((u.pr-(st*15+10))*.6+R()*25,0,60));return r;}
+function recruitCalendar(){
+ if(!S.earlySigned&&S.day>=Math.round(LAST*.12)){S.earlySigned=1;let n=0;S.recruits.forEach(r=>{if(r.to!==null){r.sgn=1;if(r.to===S.user)n++;}});news(`✍️ Early signing period: ${T(S.user).name} signed ${n} recruit${n===1?"":"s"} to binding letters. Signed players can no longer decommit.`);}
+ if(!S.reclassed&&S.day>=Math.round(LAST*.4)){S.reclassed=1;const add=[makeRecruit(5),makeRecruit(4),makeRecruit(4)];add.forEach(r=>{r.rc=1;S.recruits.push(r);});keySort(S.recruits,r=>r.pot*.6+r.ovr*.4).forEach((r,i)=>r.rk=i+1);add.forEach(r=>news(`🔄 ${r.st}★ ${r.pos} ${r.fn} ${r.ln} (${r.city}, ${r.hs}) reclassified into this recruiting class.`));}}
+/* coach contract */
+function salFor(pr){return Math.round((300+pr*pr*.45)/50)*50;}
+function ctr(){const c=S.coach;if(!c.ctr)c.ctr={y:5,sal:salFor(T(S.user).pr)};return c.ctr;}
+function ctrTxt(){const k=ctr();return `${k.y} year${k.y===1?"":"s"} left at ${money(k.sal)} a year`;}
+function contractCheck(){const c=S.coach,k=ctr();
+ if(S.fired){news(`💼 ${c.name}'s buyout: ${money(k.y*k.sal)} for the ${k.y} year${k.y===1?"":"s"} left on his deal.`);return;}
+ k.y=Math.max(0,k.y-1);
+ if(c.sec>=75&&k.y<=3){k.y+=3;k.sal=Math.round(k.sal*1.15/50)*50;news(`✍️ ${T(S.user).name} gave ${c.name} a contract extension: ${k.y} years at ${money(k.sal)} a year.`);}
+ else if(k.y===0){k.y=2;news(`✍️ ${c.name} signed a two-year deal to stay at ${T(S.user).name}.`);}}
+function poachStaff(){ROLES.forEach(role=>{const s=S.staff[role];if(!s||s.r<72||R()>(s.r-65)/40)return;const opts=S.vac.filter(id=>id!==S.user&&T(id).pr<70);if(!opts.length)return;const id=pick(opts),t=T(id);
+ t.coach=newCoach(t.pr);t.coach.fn=s.fn;t.coach.ln=s.ln;t.coach.r=Math.max(45,s.r-6);t.coach.cw=0;t.coach.cl=0;t.coach.ncaa=0;t.coach.s16=0;S.vac=S.vac.filter(x=>x!==id);S.staff[role]=null;t.fired=0;
+ news(`📤 Your ${role.toLowerCase()} coach ${s.fn} ${s.ln} was hired as head coach at ${t.name}.`);S.carousel.push(`${t.name} hired ${s.fn} ${s.ln}, an assistant at ${T(S.user).name}.`);});}
 
 /* ============ sim controls ============ */
 let BUSY=false;
@@ -859,7 +908,7 @@ function managerView(){const list=SLOTS.slice().sort((a,b)=>b.updated-a.updated)
  ${list.some(m=>UI.delArm===m.id)?`<p class="sm" style="color:var(--loss)">Tap Confirm to delete that dynasty for good.</p>`:""}
  <div class="btns"><label class="btn sm" style="cursor:pointer">Import a dynasty file<input type="file" accept=".json,application/json" data-act="importdyn" hidden></label></div>
  <p class="sm muted">Dynasties are saved on this device and browser. Export one to back it up or move it to another device or to the installed app.</p></main>`;}
-async function init(){try{await DBP;}catch(e){STORE="ls";}
+async function init(){TEAMDEF.forEach(realignTeam);try{await DBP;}catch(e){STORE="ls";}
  const old=load();if(old){try{old.slot=old.slot||"d"+Date.now().toString(36);S=old;await flushSave();localStorage.removeItem(KEY);}catch(e){}S=null;}
  await refreshSlots();UI.screen=SLOTS.length?"manager":"setup";render();}
 
@@ -886,7 +935,7 @@ function render(){
 
 /* --- setup --- */
 function setupView(){
- const confs=CONFS.map(c=>c[0]);const cf=UI.setConf||"ACC";
+ const confs=confNames();const cf=UI.setConf||"ACC";
  const list=TEAMDEF.map((t,i)=>({...t,i})).filter(t=>t.conf===cf).sort((a,b)=>b.pr-a.pr);
  return `<main class="wrap"><section class="hero"><h1>Hardwood<br>Dynasty</h1><p>Take over any of ${TEAMDEF.length} Division I programs. Build through recruiting and the portal, survive the carousel, and chase a banner in April.</p><div class="court"></div></section>
  ${SLOTS.length?`<button class="btn sm" data-act="mydyn" style="margin-top:16px">Back to my dynasties</button>`:""}
@@ -907,7 +956,7 @@ function homeView(){
   h+=`<section class="board" aria-label="Next game"><div class="stripe"><span style="background:#${L.c1}"></span><span style="background:#${Rt.c1}"></span></div>
   <div class="when"><span>${dateOf(g.d)} · ${esc(g.ev||(g.c?"Conference game":"Non-conference"))}</span><span>${g.n?"Neutral site":home?"Home":"Away"}</span></div>
   <div class="vs"><div class="side">${badge(L,58)}<div class="tn">${tname(L)}</div><div class="rec">${rec(L)}</div><div class="rec" style="font-size:12.5px">${esc(coachName(L))}</div></div><div class="mid">${g.n?"vs":"at"}</div><div class="side">${badge(Rt,58)}<div class="tn">${tname(Rt)}</div><div class="rec">${rec(Rt)}</div><div class="rec" style="font-size:12.5px">${esc(coachName(Rt))}</div></div></div>
-  <div class="when"><span>${esc(u.ab)} win chance</span><span class="num" style="color:var(--amber)">${Math.round(p*100)}%</span></div>
+  <div class="when"><span>${esc(u.ab)} win chance</span><span class="num" style="color:var(--amber)">${Math.round(p*100)}%</span></div><div class="when"><span>Style matchup</span><span>${matchTxt(L.id===S.user?Rt:L)}</span></div>
   <div class="prob"><span style="flex:${p};background:#${u.c1}"></span><span style="flex:${1-p};background:#${opp.c1}"></span></div>
   <div class="btns"><button class="btn pri" data-act="watch">Watch it live</button><button class="btn dark" style="border-color:#33465f" data-act="play">Sim game</button><button class="btn dark" style="border-color:#33465f" data-act="simweek">Sim a week</button><button class="btn dark" style="border-color:#33465f" data-act="team" data-v="${opp.id}">Scout ${esc(opp.ab)}</button></div></section>`;}
  else{h+=`<section class="board"><div class="tn" style="font-family:var(--disp);font-size:20px">${eliminated()?"Your season is over":"No game scheduled yet"}</div><p style="color:#c3cede;margin:6px 0 0">${eliminated()?"Sim the rest of the postseason to reach the offseason.":"Advance to the next day of the schedule."}</p><div class="btns"><button class="btn pri" data-act="play">${eliminated()?"Sim to next day":"Advance"}</button></div></section>`;}
@@ -995,7 +1044,7 @@ function nitView(){const c=S.nit,names=["First round","Second round","Quarterfin
   return `<div class="col"><h4>${nm}</h4>${cells.join("")}</div>`;}).join("")}</div>`;
  if(c.champ!==null)h+=`<div class="panel row">${badge(T(c.champ),36)}<div><div class="sm muted">NIT champion</div><b>${esc(T(c.champ).name)}</b></div></div>`;
  return h;}
-function confSelect(cf){return `<select data-act="confview" aria-label="Conference" style="width:100%;margin:6px 0 10px">${CONFS.map(c=>`<option ${c[0]===cf?"selected":""}>${esc(c[0])}</option>`).join("")}</select>`;}
+function confSelect(cf){return `<select data-act="confview" aria-label="Conference" style="width:100%;margin:6px 0 10px">${confNames().map(c=>`<option ${c===cf?"selected":""}>${esc(c)}</option>`).join("")}</select>`;}
 
 /* --- roster --- */
 function rosterView(){const u=T(S.user),pl=playable(u),d=pl.concat(depth(u).filter(p=>!pl.includes(p))),custom=S.autoLineup===false,MN=minutesFor(u,pl);
@@ -1008,7 +1057,7 @@ function rosterView(){const u=T(S.user),pl=playable(u),d=pl.concat(depth(u).filt
  return h;}
 function openPlayer(id){const f=findPlayer(id);if(!f)return;const [p,pt]=f,mine=pt.id===S.user,g=p.s.g||1;bio(p);
  UI.modal=`<div class="row"><div class="grow"><h3>${esc(p.fn+" "+p.ln)}</h3><div class="muted sm">${esc(pt.name)} · ${p.pos} · ${cls(p)} · ${fmtHt(p.ht)} · Potential ${grade(p)}</div><div class="sm muted">${esc(p.home)}${p.school?" · "+esc(p.school):""}</div><div class="row" style="gap:6px;margin-top:6px;flex-wrap:wrap">${roleTags(p)}</div></div><div class="lcd" style="color:var(--ink)">${p.ovr}</div></div>
- ${p.inj>0?`<div class="panel sm" style="border-color:var(--loss)"><b class="L">Injured:</b> out ${p.inj} more game${p.inj>1?"s":""}.</div>`:""}${mine?`<div class="sm muted" style="margin:6px 0">Mood: ${moodTxt(p)} · Transfer risk: ${riskTxt(p,pt)}</div>${nilRow(p)}`:""}
+ ${p.inj>0?`<div class="panel sm" style="border-color:var(--loss)"><b class="L">Injured:</b> out ${p.inj} more game${p.inj>1?"s":""}.</div>`:""}<div class="sm muted" style="margin:6px 0">${traitTxt(p)}</div>${mine?`<div class="sm muted" style="margin:6px 0">Mood: ${moodTxt(p)} · Transfer risk: ${riskTxt(p,pt)}</div>${nilRow(p)}`:""}
  ${attrBars(p)}${careerPanel(p)}
  <div class="panel row" style="justify-content:space-around;text-align:center"><div><div class="lcd" style="font-size:28px;color:var(--ink)">${p.s.g}</div><div class="sm muted">Games</div></div><div><div class="lcd" style="font-size:28px;color:var(--ink)">${(p.s.min/g).toFixed(1)}</div><div class="sm muted">MPG</div></div><div><div class="lcd" style="font-size:28px;color:var(--ink)">${(p.s.pts/g).toFixed(1)}</div><div class="sm muted">PPG</div></div><div><div class="lcd" style="font-size:28px;color:var(--ink)">${(p.s.reb/g).toFixed(1)}</div><div class="sm muted">RPG</div></div></div>
  ${!mine?"":p.rs?`<button class="btn pri" data-act="rs" data-v="${p.id}" style="width:100%;margin-bottom:8px">Remove redshirt</button>`:rsEligible(p)?`<button class="btn" data-act="rs" data-v="${p.id}" style="width:100%;margin-bottom:6px">Redshirt this season</button><p class="sm muted" style="margin:0 0 10px">He sits out, keeps a year of eligibility, and still develops. Allowed until he has played 4 games.</p>`:`<p class="sm muted" style="margin:0 0 10px">${p.rsUsed?"Redshirt already used.":"Redshirt isn't available for him this season."}</p>`}
@@ -1047,7 +1096,7 @@ function portalView(){
  let h=`<div class="panel row"><div class="grow"><div class="lcd" style="font-size:30px;color:var(--ink)">${money(S.nil)}</div><div class="sm muted">NIL budget remaining</div></div><div style="text-align:right"><b class="num">${room}</b> <span class="sm muted">roster spots</span><br><span class="sm muted">${S.portal.length} in portal</span></div></div>
  <div class="row" style="margin:8px 0"><select data-act="rpos" aria-label="Position">${["all",...POS].map(p=>`<option value="${p}" ${UI.rPos===p?"selected":""}>${p==="all"?"All positions":p}</option>`).join("")}</select></div>`;
  let list=S.portal;if(UI.rPos!=="all")list=list.filter(e=>e.p.pos===UI.rPos);
- h+=`<div class="list">${list.slice(0,60).map(e=>{const p=e.p,ch=portalChance(e);return `<div class="li"><div class="grow"><div style="font-weight:600">${esc(p.fn+" "+p.ln)} <span class="tag">${p.pos}</span> <span class="sm muted">${cls(p)} · from ${esc(fromName(e))}</span></div><div class="sm muted">OVR <b class="num" style="color:var(--ink)">${p.ovr}</b> · Pot ${grade(p)} · ${p.s.g?(p.s.pts/p.s.g).toFixed(1)+" ppg · ":""}Interest ${ch>.65?"high":ch>.35?"medium":"low"}</div></div><button class="btn sm pri" data-act="portal" data-v="${p.id}" ${S.nil<e.ask||room<=0?"disabled":""}>Offer ${money(e.ask)}</button></div>`;}).join("")||`<div class="li muted">The portal is empty.</div>`}</div>
+ h+=`<div class="list">${list.slice(0,60).map(e=>{const p=e.p,ch=portalChance(e);return `<div class="li"><div class="grow"><div style="font-weight:600">${esc(p.fn+" "+p.ln)} <span class="tag">${p.pos}</span> <span class="sm muted">${cls(p)} · from ${esc(fromName(e))}</span></div><div class="sm muted">OVR <b class="num" style="color:var(--ink)">${p.ovr}</b> · Pot ${grade(p)} · ${p.s.g?(p.s.pts/p.s.g).toFixed(1)+" ppg · ":""}Interest ${ch>.65?"high":ch>.35?"medium":"low"}${e.bids?` · ${e.bids} school${e.bids>1?"s":""} bidding`:""}</div></div><div class="btns" style="margin:0;flex-direction:column;gap:4px"><button class="btn sm pri" data-act="portal" data-v="${p.id}" ${S.nil<e.ask||room<=0?"disabled":""}>Offer ${money(e.ask)}</button><button class="btn sm" data-act="portal" data-v="${p.id}" data-m="1.25" ${S.nil<e.ask*1.25||room<=0?"disabled":""}>Outbid: ${money(Math.round(e.ask*1.25))}</button></div></div>`;}).join("")||`<div class="li muted">The portal is empty.</div>`}</div>
  <p class="sm muted">Each player decides immediately. Your NIL is spent only if he commits.</p>`+auto;
  return h;}
 
@@ -1066,14 +1115,14 @@ function awardsView(){const A=S.awards;if(!A||!A.pre)return `<p class="muted">Aw
  return h;}
 function histView(){if(!S.hist||!S.hist.length)return `<p class="muted">League history fills in after your first season.</p>`;
  return `<div class="list">${S.hist.map(x=>`<div class="li" style="align-items:flex-start">${x.champ!==null?badge(T(x.champ),34):""}<div class="grow"><div style="font-weight:600">${x.y}-${String((x.y+1)%100).padStart(2,"0")}: ${x.champ!==null?esc(T(x.champ).name):"No champion"}</div><div class="sm muted">${x.ru!==null?`Beat ${esc(T(x.ru).name)} ${x.score}`:""}${x.poy?`<br>Player of the Year: ${esc(x.poy.n)} (${esc(T(x.poy.t).name)})`:""}${x.coy?`<br>Coach of the Year: ${esc(x.coy.n)} (${esc(T(x.coy.t).name)})`:""}${x.mop?`<br>Most Outstanding Player: ${esc(x.mop.n)}`:""}${x.nit!==null&&x.nit!==undefined?`<br>NIT champion: ${esc(T(x.nit).name)}`:""}</div></div></div>`).join("")}</div>`;}
-function rankView(){const v=UI.seg.rank||"top";let h=seg("rank",[["top","Top 25"],["conf","Standings"],["lead","Leaders"],["aw","Awards"],["hist","History"]],v);
- if(v==="lead")return h+leadersView();if(v==="aw")return h+awardsView();if(v==="hist")return h+histTabs();
+function rankView(){const v=UI.seg.rank||"top";let h=seg("rank",[["top","Top 25"],["net","NET"],["conf","Standings"],["lead","Leaders"],["aw","Awards"],["hist","History"]],v);
+ if(v==="lead")return h+leadersView();if(v==="net")return h+netView();if(v==="aw")return h+awardsView();if(v==="hist")return h+histTabs();
  if(v==="top"){h+=`<div class="list">${S.poll.map((id,i)=>{const t=T(id),pv=S.pollPrev[id],mv=pv?pv-(i+1):null;return `<div class="li" data-act="team" data-v="${id}" role="button" tabindex="0" style="cursor:pointer"><span class="rk">${i+1}</span>${badge(t,30)}<div class="grow"><div style="${id===S.user?"font-weight:700":""}">${esc(t.name)}</div><div class="sm muted">${esc(t.conf)} · ${esc(coachName(t))}</div></div><span class="num">${rec(t)}</span><span class="sm" style="width:30px;text-align:right">${mv===null?`<span class="muted">new</span>`:mv>0?`<span class="W">▲${mv}</span>`:mv<0?`<span class="L">▼${-mv}</span>`:`<span class="muted">–</span>`}</span></div>`;}).join("")}</div>`;}
  else{const cf=UI.confView||T(S.user).conf;h+=confSelect(cf);h+=`<div class="tscroll"><table><thead><tr><th>Team</th><th>Conf</th><th>All</th><th>Rank</th></tr></thead><tbody>${confStand(cf).map(t=>`<tr data-act="team" data-v="${t.id}" style="cursor:pointer"><td><span class="row" style="gap:7px">${badge(t,22)}<span style="${t.id===S.user?"font-weight:700":""}">${esc(t.name)}</span></span></td><td class="num">${t.cw}-${t.cl}</td><td class="num">${rec(t)}</td><td class="num">${rankOf(t.id)||""}</td></tr>`).join("")}</tbody></table></div>`;}
  return h;}
 
 /* --- office --- */
-function officeView(){const c=S.coach,u=T(S.user);let h=`<h2>${esc(c.name)}</h2><div class="panel">
+function officeView(){const c=S.coach,u=T(S.user);let h=`<h2>${esc(c.name)}</h2><div class="panel"><div class="row"><span class="grow">Contract</span><b>${ctrTxt()}</b></div>
  <div class="row"><span class="grow">Career record</span><b class="num">${c.w}-${c.l}</b></div><div class="row"><span class="grow">NCAA Tournaments</span><b class="num">${c.ncaa}</b></div><div class="row"><span class="grow">Final Fours</span><b class="num">${c.f4}</b></div><div class="row"><span class="grow">National titles</span><b class="num">${c.titles}</b></div><div class="row"><span class="grow">Seasons at ${esc(u.name)}</span><b class="num">${c.yrsHere}</b></div></div>`;
  if(c.hist.length)h+=`<h2>Season history</h2><div class="tscroll"><table><thead><tr><th>Season</th><th>Team</th><th>Record</th><th>Finish</th></tr></thead><tbody>${c.hist.map(x=>`<tr><td>${x.y}-${String((x.y+1)%100).padStart(2,"0")}</td><td style="text-align:left">${esc(x.team)}</td><td class="num">${x.w}-${x.l}</td><td>${esc(x.fin)}${x.seed?` (${x.seed})`:""}</td></tr>`).join("")}</tbody></table></div>`;
  h+=prosPanel();
@@ -1121,21 +1170,21 @@ function recProfiles(){const best={};S.recruits.forEach(r=>{const x=X(r);if(!r.c
  if(r.st>=3&&R()<.3)aw.push(pick(["Holiday tournament MVP","State champion","Region Player of the Year","1,000-point scorer"]));r.aw=aw;});}
 const OFFS={"Motion":"Ball movement and cutting. Rewards good passers.","Pace and space":"Spread the floor and hunt threes. Rewards shooters.","Run and gun":"Push the tempo for transition buckets. Rewards speed.","Post-centric":"Play through the bigs. Rewards finishers inside.","Grind it out":"Slow, deliberate half-court sets that lean on defense."};
 const DEFS={"Man-to-man":"Straight-up man defense with no gimmicks.","2-3 zone":"Packs the paint. Vulnerable to good shooting teams.","Full-court press":"Speeds teams up and forces turnovers. Beaten by good ball handlers.","Pack line":"Walls off the lane and concedes some threes.","Switch everything":"Switches every screen. Can get punished inside."};
-const PACE={"Motion":0,"Pace and space":3,"Run and gun":7,"Post-centric":-3,"Grind it out":-7};
+const PACE={"Motion":0,"Pace and space":4,"Run and gun":10,"Post-centric":-3,"Grind it out":-10};
 let TAG={};
 function styleOf(t){if(t.id===S.user)return{off:S.coach.off||"Motion",def:S.coach.def||"Man-to-man"};if(!t.coach)return{off:"Motion",def:"Man-to-man"};if(!t.coach.off){t.coach.off=pick(Object.keys(OFFS));t.coach.def=R()<.45?"Man-to-man":pick(Object.keys(DEFS));}return{off:t.coach.off,def:t.coach.def};}
 function teamAgg(t){const d=playable(t).slice(0,7),o={};["thr","spd","fin","pas","pdf","drb"].forEach(k=>o[k]=d.reduce((s,p)=>s+X(p)[k],0)/(d.length||1));return o;}
 function styleEdge(A,so,B,sd){let e=0;
  if(so.off==="Pace and space")e+=(A.thr-68)*.12;else if(so.off==="Run and gun")e+=(A.spd-68)*.12;else if(so.off==="Post-centric")e+=(A.fin-68)*.12;else if(so.off==="Motion")e+=(A.pas-66)*.1;
  if(sd.def==="2-3 zone")e+=(A.thr-66)*.12;else if(sd.def==="Full-court press")e+=(A.drb-68)*.12-.5;else if(sd.def==="Pack line")e+=(A.thr-68)*.08-(A.fin-68)*.08;else if(sd.def==="Switch everything")e+=(A.fin-68)*.06;
- if(sd.off==="Grind it out")e-=(B.pdf-66)*.08;return clamp(e,-3,3);}
+ if(sd.off==="Grind it out")e-=(B.pdf-66)*.08;return clamp(e*1.35,-4.5,4.5);}
 function styleSection(){const s=styleOf(T(S.user)),A=teamAgg(T(S.user)),op=(o,cur)=>Object.keys(o).map(k=>`<option ${k===cur?"selected":""}>${k}</option>`).join("");
  return `<h2>Coaching philosophy</h2><div class="panel"><label class="sm" style="display:block">Offense<select data-act="cstyle" data-k="off" style="width:100%;margin:4px 0">${op(OFFS,s.off)}</select></label><div class="sm muted">${OFFS[s.off]}</div>
  <label class="sm" style="display:block;margin-top:12px">Defense<select data-act="cstyle" data-k="def" style="width:100%;margin:4px 0">${op(DEFS,s.def)}</select></label><div class="sm muted">${DEFS[s.def]}</div>
  <div class="sm muted" style="margin-top:12px">Your top seven average: 3-point ${Math.round(A.thr)}, speed ${Math.round(A.spd)}, finishing ${Math.round(A.fin)}, passing ${Math.round(A.pas)}, ball handling ${Math.round(A.drb)}, perimeter D ${Math.round(A.pdf)}. A style that fits your roster, and attacks your opponent's weak spots, is worth a few points a game in simulated games.</div></div>`;}
 function openTeam(id){const t=T(id);if(!t)return;const st=styleOf(t),co=t.id===S.user?null:t.coach,d=playable(t).concat(depth(t).filter(p=>p.rs)),A=teamAgg(t);
  const gs=S.games.filter(g=>g.done&&(g.h===id||g.a===id)).sort((a,b)=>b.d-a.d).slice(0,5);
- UI.modal=`<div class="row" style="gap:12px">${badge(t,56)}<div class="grow"><h3 style="margin:0">${tname(t)}</h3><div class="sm muted">${esc(t.conf)} · ${rec(t)} (${t.cw}-${t.cl} conf.) · Prestige ${Math.round(t.pr)}</div></div></div>
+ UI.modal=`<div class="row" style="gap:12px">${badge(t,56)}<div class="grow"><h3 style="margin:0">${tname(t)}</h3><div class="sm muted">${esc(t.conf)} · ${rec(t)} (${t.cw}-${t.cl} conf.) · Prestige ${Math.round(t.pr)}${S.netR?` · NET ${S.netR[t.id]} · Q1 ${quads(t)[0].join("-")}`:""}</div></div></div>
  <div class="panel"><div class="sm muted">Head coach</div><b>${esc(coachName(t))}</b>${co?` <span class="sm muted">rating ${co.r}${co.yrs?`, year ${co.yrs+1}`:""}</span><div class="sm muted">${careerTxt(co)}</div>`:` <span class="sm muted">(you)</span>`}<div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap"><span class="tag amb">${esc(st.off)}</span><span class="tag amb">${esc(st.def)}</span></div><div class="sm muted" style="margin-top:6px">${esc(OFFS[st.off])} ${esc(DEFS[st.def])}</div></div>
  <div class="panel sm">Top seven: 3-point ${Math.round(A.thr)}, speed ${Math.round(A.spd)}, finishing ${Math.round(A.fin)}, ball handling ${Math.round(A.drb)}, perimeter D ${Math.round(A.pdf)}</div>
  <h3>Roster</h3><div class="list">${d.map(p=>`<button class="li" data-act="player" data-v="${p.id}"><span class="tag">${p.pos}</span><div class="grow"><div style="font-weight:600">${esc(p.fn+" "+p.ln)}${p.rs?' <span class="sm muted">(RS)</span>':""}</div><div class="sm muted">${cls(p)}, ${fmtHt(htOf(p))} · ${esc(roles(p).join(", ")||"Role player")}</div></div><span class="num" style="font-size:18px">${p.ovr}</span></button>`).join("")}</div>
@@ -1149,7 +1198,7 @@ function openRecruit(id){const r=S.recruits.find(x=>x.id===id);if(!r)return;UI.r
  <div class="sm muted" style="font-weight:600">Senior season</div><div class="panel row" style="justify-content:space-around;text-align:center;margin-top:4px">${[["PPG",r.hsst.ppg],["RPG",r.hsst.rpg],["APG",r.hsst.apg]].map(([k,v])=>`<div><div class="lcd" style="font-size:28px;color:var(--ink)">${v}</div><div class="sm muted">${k}</div></div>`).join("")}</div>
  ${r.aw&&r.aw.length?`<h3>Awards</h3><div class="list">${r.aw.map(a=>`<div class="li sm">🏅 ${esc(a)}</div>`).join("")}</div>`:""}
  <h3 style="margin-top:14px">Ratings</h3>${attrBars(r)}
- <h3 style="margin-top:16px">Recruitment</h3>${other?`<p class="muted">Committed to ${esc(T(r.to).name)}.</p>`:done?`<p><span class="tag amb">Committed to ${esc(T(S.user).name)}</span></p>`:`<div class="row sm"><span class="grow">Interest in ${esc(T(S.user).name)}</span><b class="num">${r.int}/100</b></div><div class="bar" style="margin:4px 0 6px"><i style="width:${r.int}%"></i></div><div class="sm muted">Fit ${Math.round(recMult(r)*100)}% · ${r.off?"Offered":"No offer yet"} · ${S.pts} points left this week</div>${S.phase==="season"?recNilRow(r):""}${S.phase==="season"?`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`:""}`}
+ <h3 style="margin-top:16px">Recruitment</h3>${other?`<p class="muted">Committed to ${esc(T(r.to).name)}.</p>`:done?`<p><span class="tag amb">Committed to ${esc(T(S.user).name)}</span></p>`:`<div class="row sm"><span class="grow">Interest in ${esc(T(S.user).name)}</span><b class="num">${r.int}/100</b></div><div class="bar" style="margin:4px 0 6px"><i style="width:${r.int}%"></i></div><div class="sm muted">Fit ${Math.round(recMult(r)*100)}% · ${r.off?"Offered":"No offer yet"} · ${S.pts} points left this week</div><div class="sm muted" style="margin-top:6px">Scouting: ${traitTxt(r)}${r.rc?" · Reclassified":""}${r.sgn?" · Signed early":""}</div>${S.phase==="season"?recNilRow(r):""}${S.phase==="season"?`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`:""}`}
  <button class="btn" data-act="close" style="width:100%;margin-top:14px">Close</button>`;render();}
 
 /* ============ team preview on the setup screen ============ */
@@ -1306,12 +1355,12 @@ function openSel(step){const N=S.ncaa;if(!N)return;step=clamp(step,0,SELSTEPS.le
 
 /* ============ editor ============ */
 function coachName(t){return t.id===S.user?S.coach.name:(t.coach?(t.coach.fn+" "+t.coach.ln).trim():"");}
-function applyRealCoaches(){let n=0;S.teams.forEach(t=>{const nm=REALCOACH[t.name];if(!nm||t.id===S.user)return;if(!t.coach)t.coach=newCoach(t.pr);const i=nm.indexOf(" ");t.coach.fn=nm.slice(0,i);t.coach.ln=nm.slice(i+1);const s=COACHSTATS[t.name];if(s){[t.coach.cw,t.coach.cl,t.coach.ncaa,t.coach.s16,t.coach.ff,t.coach.ch]=s;t.coach.r=coachRatingFrom(t.coach);}else if(ELITE.has(nm))t.coach.r=Math.max(t.coach.r,90);n++;});return n;}
+function applyRealCoaches(){let n=0;S.teams.forEach(t=>{const nm=REALCOACH[t.name];if(!nm||t.id===S.user)return;if(!t.coach)t.coach=newCoach(t.pr);const i=nm.indexOf(" ");t.coach.fn=nm.slice(0,i);t.coach.ln=nm.slice(i+1);const cs=CSTYLE[nm];if(cs){t.coach.off=cs[0];t.coach.def=cs[1];}const s=COACHSTATS[t.name];if(s){[t.coach.cw,t.coach.cl,t.coach.ncaa,t.coach.s16,t.coach.ff,t.coach.ch]=s;t.coach.r=coachRatingFrom(t.coach);}else if(ELITE.has(nm))t.coach.r=Math.max(t.coach.r,90);n++;});return n;}
 function splitName(nm){const i=nm.indexOf(" ");return i>0?[nm.slice(0,i),nm.slice(i+1)]:[nm,""];}
 const TA='style="width:100%;font:inherit;color:var(--ink);background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:9px 10px"';
 function openEditor(tid){if(tid!==undefined&&tid!==null)UI.edTeam=tid;if(UI.edTeam===undefined||UI.edTeam===null)UI.edTeam=S.user;const t=T(UI.edTeam),d=depth(t);
  UI.modal=`<h3>Edit teams and coaches</h3>
- <div class="row" style="gap:8px;margin:10px 0"><select data-act="edconf" aria-label="Conference" style="flex:1;min-width:0">${CONFS.map(c=>`<option ${c[0]===t.conf?"selected":""}>${esc(c[0])}</option>`).join("")}</select><select data-act="edteam" aria-label="Team" style="flex:1;min-width:0">${S.teams.filter(x=>x.conf===t.conf).map(x=>`<option value="${x.id}" ${x.id===t.id?"selected":""}>${esc(x.name)}</option>`).join("")}</select></div>
+ <div class="row" style="gap:8px;margin:10px 0"><select data-act="edconf" aria-label="Conference" style="flex:1;min-width:0">${confNames().map(c=>`<option ${c===t.conf?"selected":""}>${esc(c)}</option>`).join("")}</select><select data-act="edteam" aria-label="Team" style="flex:1;min-width:0">${S.teams.filter(x=>x.conf===t.conf).map(x=>`<option value="${x.id}" ${x.id===t.id?"selected":""}>${esc(x.name)}</option>`).join("")}</select></div>
  <label class="sm muted" for="edcoach">Head coach${t.id===S.user?" (you)":""}</label>
  <input type="text" id="edcoach" value="${esc(coachName(t))}" maxlength="40" style="width:100%;margin:4px 0 14px">
  <div class="row sm muted"><span class="grow">Players</span><span>OVR</span></div>
@@ -1385,7 +1434,7 @@ document.addEventListener("click",e=>{
  if(a==="edimport"){edImport();return;}
  if(a==="realcoaches"){const n=applyRealCoaches();toast(`Loaded ${n} real head coaches`);save();render();return;}
  if(a==="rec"){recAct(+v,el.dataset.k);if(UI.modal&&UI.recOpen===+v)openRecruit(+v);return;}
- if(a==="portal"){portalOffer(+v);return;}
+ if(a==="portal"){portalOffer(+v,+(el.dataset.m||1));return;}
  if(a==="portaltab"){UI.tab="recruit";UI.seg.rec="portal";render();return;}
  if(a==="step"){advanceStep();window.scrollTo(0,0);return;}
  if(a==="takejob"){takeJob(+v);return;}
