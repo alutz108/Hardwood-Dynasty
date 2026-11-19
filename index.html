@@ -474,35 +474,29 @@ function computePoll(){computeNET();const prev={};S.poll.forEach((id,i)=>prev[id
 /* ============ recruiting ============ */
 const STARB={5:[74,80,90,98],4:[66,73,81,91],3:[57,64,70,80],2:[48,56,59,69],1:[42,50,52,62]};
 function genRecruits(){
- S.recruits=[];const counts={5:25,4:100,3:260,2:300,1:160};const u=T(S.user);
+ S.recruits=[];const counts={5:25,4:100,3:280,2:380,1:300};const u=T(S.user);
  Object.entries(counts).forEach(([st,c])=>{st=+st;const b=STARB[st];for(let i=0;i<c;i++){const pos=pick(POS),t=ri(b[0],b[1]);
   const r={id:S.pid++,fn:pick(FIRST),ln:pick(LASTN),pos,st,hs:wstate(),r:makeRatings(pos,t),s:z(),yr:1,int:0,off:0,to:null,aw:-1,vis:0};r.ovr=calcOvr(r);r.pot=Math.max(r.ovr+3,ri(b[2],b[3]));genX(r);r.city=pick(CITY[r.hs]);r.school=genSchool(r.city,r.hs,st);r.sv=2;
   r.int=Math.round(clamp((u.pr-(st*15+10))*.6+R()*25,0,60));S.recruits.push(r);}});
  S.recruits.forEach(r=>{if(R()<.05)makeIntl(r);});S.recruits.sort((a,b)=>(b.pot*.6+b.ovr*.4)-(a.pot*.6+a.ovr*.4));S.recruits.forEach((r,i)=>r.rk=i+1);S.cv=5;recProfiles();S.recruits.forEach(r=>{if(r.intl)r.school="";});
 }
-function recMult(r){return clamp((T(S.user).pr+15)/(r.st*16+20),.15,1.6);}
 function ptsPerWeek(){return Math.round(40+T(S.user).pr*.6+staffFx("Recruiting"));}
 function myCommits(){return S.recruits.filter(r=>r.to===S.user);}
 function schAvail(){const u=T(S.user);return 15-u.roster.filter(p=>p.yr<4).length-myCommits().length;}
 function recruitWeek(){
  S.week++;S.pts=ptsPerWeek();weeklyMorale();nilRequests();decommits();recruitCalendar();autoRecruit();
- S.recruits.forEach(r=>{if(r.to!==null)return;if(r.nilOff)r.int=Math.min(100,r.int+Math.round(r.nilOff/RVAL[r.st]*3*recMult(r)));
-  if(r.off&&r.int>=100&&schAvail()>0){r.to=S.user;news(`🖊️ ${r.st}★ ${r.pos} ${r.fn} ${r.ln} (#${r.rk}) committed to ${T(S.user).name}!`);return;}
-  const p=({5:.025,4:.03,3:.03,2:.025,1:.02})[r.st]*(1+S.week/9);
-  if(R()<p){if(r.off&&schAvail()>0&&R()<r.int/170){r.to=S.user;news(`🖊️ ${r.st}★ ${r.pos} ${r.fn} ${r.ln} committed to ${T(S.user).name}!`);return;}
-   const tp=r.st*15+15,cands=S.teams.filter(t=>t.id!==S.user&&Math.abs(t.pr-tp)<14+r.st*2);const t=cands.length?wpick(cands,x=>Math.pow(x.pr,2.5)):pick(S.teams.filter(t=>t.id!==S.user));
-   r.to=t.id;r.cwk2=S.week;if(r.off||r.int>=40)news(`${r.st}★ ${r.fn} ${r.ln} committed to ${t.name} instead.`);}
- });
+ S.recruits.forEach(r=>{if(r.to===null&&r.nilOff)r.int=Math.min(100,r.int+Math.round(r.nilOff/RVAL[r.st]*3*recMult(r)));});
+ recruitDecisions();
 }
 function recAct(id,kind){const r=S.recruits.find(x=>x.id===id);if(!r||r.to!==null)return;
- if(kind==="offer"){if(r.off){r.off=0;toast("Offer pulled");}else{if(S.recruits.filter(x=>x.off&&x.to===null).length>=schAvail()+4){toast("Too many open offers for your scholarships");return;}r.off=1;r.int=Math.min(100,r.int+5);toast("Scholarship offered");}save();render();return;}
- if(r.aw===S.week){toast("Already contacted this week");return;}
+ if(kind==="offer"){if(r.off){r.off=0;toast("Offer pulled");}else{if(S.recruits.filter(x=>x.off&&x.to===null).length>=schAvail()+4){toast("Too many open offers for your scholarships");return;}r.off=1;r.int=Math.min(100,r.int+8);toast("Scholarship offered");}save();render();return;}
+ if(r.lc===S.week){toast("Already contacted this week");return;}
  const cost={call:5,home:25,visit:0}[kind];if(S.pts<cost){toast("Not enough recruiting points");return;}
  if(kind==="visit"){if(S.cv<=0){toast("No official visits left this season");return;}S.cv--;}
- const gain={call:[4,8],home:[14,22],visit:[20,30]}[kind];S.pts-=cost;r.aw=S.week;
+ const gain={call:[4,8],home:[14,22],visit:[20,30]}[kind];S.pts-=cost;r.lc=S.week;
  const g=Math.round(ri(gain[0],gain[1])*recMult(r));r.int=Math.min(100,r.int+g);
  let msg=`+${g} interest`;
- if(r.off&&r.int>=100&&schAvail()>0){r.to=S.user;msg=`${r.fn} ${r.ln} committed!`;news(`🖊️ ${r.st}★ ${r.pos} ${r.fn} ${r.ln} (#${r.rk}) committed to ${T(S.user).name}!`);}
+ if(!r.off&&r.int>85)r.int=85;if(r.off&&r.int>=100&&schAvail()>0){commitTo(r,S.user);msg=`${r.fn} ${r.ln} committed!`;}
  toast(msg);save();render();}
 
 /* ============ end of season & offseason ============ */
@@ -590,6 +584,7 @@ function portalFill(){
 function signing(){
  (S.wd||[]).forEach(([p,tid])=>{const tm=T(tid);if(tm.roster.length<15){tm.roster.push(p);news(`↩️ ${p.fn} ${p.ln} withdrew from the NBA Draft and returns to ${tm.name}.`);}});S.wd=[];
  S.signed=[];const pend={};S.recruits.forEach(r=>{if(r.to!==null){pend[r.to]=(pend[r.to]||0)+1;}});
+ S.recruits.filter(r=>r.to===null).sort((a,b)=>a.rk-b.rk).forEach(r=>{const L=topSchools(r).filter(([id])=>id===S.user?(r.off&&schAvail()>0&&r.int>=60):T(id).roster.length+(pend[id]||0)<13);if(L.length&&L[0][1]>=40){r.to=L[0][0];pend[r.to]=(pend[r.to]||0)+1;}});
  const free=S.recruits.filter(r=>r.to===null);
  const order=keySort(S.teams.filter(t=>t.id!==S.user),t=>t.pr+R()*15);
  for(let pass=0;pass<6&&free.length;pass++)order.forEach(t=>{if(t.roster.length+(pend[t.id]||0)>=13||!free.length)return;const r=free.shift();r.to=t.id;pend[t.id]=(pend[t.id]||0)+1;});
@@ -685,10 +680,10 @@ function reqPanel(){const R2=(S.req||[]).map(q=>[q,findPlayer(q.pid)]).filter(x=
  return `<h2>Player requests</h2><div class="list">${R2.map(([q,[p]])=>`<div class="li" style="flex-wrap:wrap"><div class="grow"><b>${esc(p.fn+" "+p.ln)}</b> <span class="sm muted">${p.pos}, ${p.ovr} OVR</span><div class="sm muted">Wants a ${money(q.ask)} NIL raise. ${3-(S.week-q.wk)} week${3-(S.week-q.wk)===1?"":"s"} to answer.</div></div><div class="btns" style="margin:0"><button class="btn sm pri" data-act="nilpay" data-v="${p.id}" ${S.nil<q.ask?"disabled":""}>Pay</button><button class="btn sm" data-act="nildeny" data-v="${p.id}">Decline</button></div></div>`).join("")}</div><p class="sm muted" style="margin:6px 0 0">NIL left this year: ${money(S.nil||0)}. Whatever you spend here comes out of your transfer portal budget.</p>`;}
 function decommits(){const u=T(S.user);S.recruits.forEach(r=>{if(r.to!==S.user||r.late||r.sgn)return;if(R()<.006+(u.l>u.w+2?.02:0)+(S.coach.sec<30?.02:0)){r.to=null;r.int=Math.max(20,r.int-35);news(`💔 ${r.st}★ ${r.fn} ${r.ln} decommitted from ${u.name}.`);}});}
 function autoRecruit(){if(!S.autoRec||S.phase!=="season")return;const need=schAvail();if(need<=0)return;const pool=S.recruits.filter(r=>r.to===null);
- const sc=r=>(r.pot*.6+r.ovr*.4)*Math.min(1,recMult(r))+r.int*.12;const tg=keySort(pool.filter(r=>recMult(r)>=.55||r.int>=50),sc).slice(0,need+3);
+ const sc=r=>(r.pot*.6+r.ovr*.4)*Math.min(1,recMult(r))+r.int*.12+(needInfo().need[r.pos]>0?8:0);const tg=keySort(pool.filter(r=>recMult(r)>=.55||r.int>=50),sc).slice(0,need+3);
  pool.forEach(r=>{if(r.off&&!tg.includes(r))r.off=0;});tg.forEach(r=>{if(!r.off){r.off=1;r.int=Math.min(100,r.int+5);}});
- keySort(tg,r=>r.int).forEach(r=>{if(r.aw===S.week)return;let k=S.pts>=25&&r.int<85?"home":S.pts>=5?"call":null;if(S.cv>0&&r.int>=55&&r.int<90&&r.st>=3)k="visit";if(!k)return;
-  if(k==="visit")S.cv--;S.pts-=({call:5,home:25,visit:0})[k];r.aw=S.week;const gn=({call:[4,8],home:[14,22],visit:[20,30]})[k];r.int=Math.min(100,r.int+Math.round(ri(gn[0],gn[1])*recMult(r)));
+ keySort(tg,r=>r.int).forEach(r=>{if(r.lc===S.week)return;let k=S.pts>=25&&r.int<85?"home":S.pts>=5?"call":null;if(S.cv>0&&r.int>=55&&r.int<90&&r.st>=3)k="visit";if(!k)return;
+  if(k==="visit")S.cv--;S.pts-=({call:5,home:25,visit:0})[k];r.lc=S.week;const gn=({call:[4,8],home:[14,22],visit:[20,30]})[k];r.int=Math.min(100,r.int+Math.round(ri(gn[0],gn[1])*recMult(r)));
   if(r.int>=100&&schAvail()>0){r.to=S.user;news(`🖊️ ${r.st}★ ${r.pos} ${r.fn} ${r.ln} (#${r.rk}) committed to ${T(S.user).name}!`);}});}
 function autoRecCard(){return `<div class="panel row" style="gap:10px"><div class="grow"><b>Recruiting assistant: ${S.autoRec?"on":"off"}</b><div class="sm muted">${S.autoRec?"Your staff makes offers and spends your points each week, and works the transfer portal in the offseason.":"You run recruiting yourself. Turn this on to let your staff handle it."}</div></div><button class="btn sm ${S.autoRec?"pri":""}" data-act="autorec">${S.autoRec?"Turn off":"Turn on"}</button></div>`;}
 function autoPortal(){const u=T(S.user);let n=0;keySort(S.portal.slice(),e=>e.p.ovr).forEach(e=>{if(u.roster.length+myCommits().length>=13||e.from===S.user||S.nil<e.ask||portalChance(e)<.35)return;
@@ -852,6 +847,51 @@ function contractCheck(){const c=S.coach,k=ctr();
 function poachStaff(){ROLES.forEach(role=>{const s=S.staff[role];if(!s||s.r<72||R()>(s.r-65)/40)return;const opts=S.vac.filter(id=>id!==S.user&&T(id).pr<70);if(!opts.length)return;const id=pick(opts),t=T(id);
  t.coach=newCoach(t.pr);t.coach.fn=s.fn;t.coach.ln=s.ln;t.coach.r=Math.max(45,s.r-6);t.coach.cw=0;t.coach.cl=0;t.coach.ncaa=0;t.coach.s16=0;S.vac=S.vac.filter(x=>x!==id);S.staff[role]=null;t.fired=0;
  news(`📤 Your ${role.toLowerCase()} coach ${s.fn} ${s.ln} was hired as head coach at ${t.name}.`);S.carousel.push(`${t.name} hired ${s.fn} ${s.ln}, an assistant at ${T(S.user).name}.`);});}
+
+/* ============ smarter recruiting: needs, priorities, fit, rival schools, AAU ============ */
+const IDEAL={G:5,W:4,B:4};
+const PRIOS=["Playing time","Winning","NIL","Development","Style fit"];
+const STYLEKEY={"Pace and space":"thr","Run and gun":"spd","Post-centric":"fin","Motion":"pas","Grind it out":"pdf"};
+let NEEDC=null,NEEDK="";
+function needInfo(){const u=T(S.user),com=myCommits(),k=S.user+"|"+S.week+"|"+u.roster.length+"|"+com.length+"|"+S.year;if(NEEDC&&NEEDK===k)return NEEDC;
+ const have={G:0,W:0,B:0},ret=u.roster.filter(p=>p.yr<4||p.rs);ret.forEach(p=>have[p.pos]=(have[p.pos]||0)+1);com.forEach(r=>have[r.pos]=(have[r.pos]||0)+1);
+ const need={};POS.forEach(p=>need[p]=Math.max(0,IDEAL[p]-have[p]));NEEDC={have,need,ret,com};NEEDK=k;return NEEDC;}
+function prios(r){if(!r.pri){const w=r.st>=4?[2,3,3,3,1]:r.st===3?[3,2,2,2,2]:[4,2,1,1,2],wf=k=>w[PRIOS.indexOf(k)];const a=wpick(PRIOS,wf);let b=a;while(b===a)b=wpick(PRIOS,wf);r.pri=[a,b];}return r.pri;}
+function aheadOf(r){const n=needInfo();return n.ret.filter(p=>p.pos===r.pos&&p.ovr>=r.pot-6).length+n.com.filter(c=>c.id!==r.id&&c.pos===r.pos&&c.pot>=r.pot).length;}
+function prioScore(r,k){const u=T(S.user);
+ if(k==="Playing time"){const a=aheadOf(r);return clamp(100-a*24+(needInfo().need[r.pos]>0?10:0),8,100);}
+ if(k==="Winning")return clamp(50+(u.pr-(r.st*13+20))*1.6,5,100);
+ if(k==="NIL"){const base=clamp((nilBudget()-400)/45,5,60);return Math.round(clamp(base+(r.nilOff||0)/RVAL[r.st]*70,5,100));}
+ if(k==="Development"){const s=S.staff&&S.staff.Development;return clamp(((s?s.r:40)-35)*2.2,8,100);}
+ const key=STYLEKEY[styleOf(u).off]||"pas";return clamp((X(r)[key]-45)*2.2,8,100);}
+function fitScore(r){const p=prios(r);return Math.round(prioScore(r,p[0])*.6+prioScore(r,p[1])*.4);}
+function pullOf(r){return clamp((T(S.user).pr+15)/(r.st*16+20),.2,1.25);}
+function recMult(r){return pullOf(r)*(.55+fitScore(r)/100*.9);}
+function roleProj(r){const a=aheadOf(r);return a===0?"Starter as a freshman":a<=2?"Rotation player":"Bench to start";}
+function suitors(r){if(!r.su){const tp=r.st*15+15;let c=S.teams.filter(t=>t.id!==S.user&&Math.abs(t.pr-tp)<14+r.st*2);if(c.length<5)c=S.teams.filter(t=>t.id!==S.user);const n=r.st>=4?4:3,set=new Set();let g=0;while(set.size<n&&g++<50)set.add(wpick(c,x=>Math.pow(x.pr,r.st>=3?2.5:.8)).id);r.su=[...set].map(id=>[id,ri(5,30)]);}return r.su;}
+function aiGain(t,r){return ri(3,6)*clamp((t.pr+15)/(r.st*16+20),.3,1.25);}
+function commitTo(r,tid){r.to=tid;r.cwk2=S.week;if(tid===S.user)news(`🖊️ ${r.st}★ ${r.pos} ${r.fn} ${r.ln} (#${r.rk}) committed to ${T(S.user).name}!`);else if(r.off||r.int>=40)news(`${r.st}★ ${r.fn} ${r.ln} committed to ${T(tid).name} over ${T(S.user).name}.`);}
+function recruitDecisions(){const cls={};S.recruits.forEach(r=>{if(r.to!==null)cls[r.to]=(cls[r.to]||0)+1;});
+ S.recruits.forEach(r=>{if(r.to!==null)return;
+  if(r.lc!==undefined&&S.week-r.lc>=3&&!r.nilOff)r.int=Math.max(0,r.int-2);
+  if(!r.off&&r.int>85)r.int=85;
+  const su=suitors(r).filter(s=>(cls[s[0]]||0)<6);su.forEach(s=>{s[1]=Math.min(100,s[1]+Math.round(aiGain(T(s[0]),r)*(.6+R()*.8)));});
+  const ent=su.map(s=>[s[0],s[1]]);if(r.off&&schAvail()>0)ent.push([S.user,r.int]);if(!ent.length)return;ent.sort((a,b)=>b[1]-a[1]);
+  const best=ent[0],gap=best[1]-(ent[1]?ent[1][1]:0);
+  if(best[1]>=100||(best[1]>=75&&gap>=8&&R()<(best[1]-68)/150*(1+S.week/14))){commitTo(r,best[0]);cls[best[0]]=(cls[best[0]]||0)+1;}});}
+function topSchools(r){const L=suitors(r).map(s=>[s[0],s[1]]);L.push([S.user,r.int]);return L.sort((a,b)=>b[1]-a[1]);}
+const AAU={"Nike EYBL":[["Mac Irvin Fire","IL"],["Meanstreets","IL"],["Team Takeover","DC"],["Team Durant","MD"],["Expressions Elite","MA"],["Brad Beal Elite","MO"],["MOKAN Elite","KS"],["Indy Heat","IN"],["Nightrydas Elite","FL"],["Oakland Soldiers","CA"],["Boo Williams","VA"],["Atlanta Xpress","GA"],["Houston Hoops","TX"],["Drive Nation","TX"],["NY Rens","NY"],["PSA Cardinals","NY"],["Team CP3","NC"],["Team Final","PA"],["Seattle Rotary","WA"],["Team Griffin","OK"]],
+ "Under Armour Association":[["Team Thrill","TN"],["Team Melo","MD"],["Team Rio","MD"],["Team Charlotte","NC"],["D1 Minnesota","MN"],["Atlanta Celtics","GA"],["Southern Assault","AL"]],
+ "Adidas 3SSB":[["Indiana Elite","IN"],["Utah Prospects","UT"],["Team Inspire","NJ"],["Florida Rebels","FL"],["Georgia Stars","GA"],["Compton Magic","CA"],["Mass Rivals","MA"]]};
+const CIRC_SHORT={"Nike EYBL":"EYBL","Under Armour Association":"UAA","Adidas 3SSB":"3SSB"};
+function aauOf(r){if(!r.aau){if(r.intl){r.aau=[`${r.city} club team`,"International"];return r.aau;}const sp=[0,.08,.2,.4,.75,.95][r.st]||0;
+ if(R()<sp){const circ=wpick(Object.keys(AAU),k=>({"Nike EYBL":5,"Under Armour Association":2.5,"Adidas 3SSB":2.5})[k]),L=AAU[circ],loc=L.filter(x=>x[1]===r.hs),tm=loc.length&&R()<.75?pick(loc):pick(L);r.aau=[tm[0],circ];}
+ else r.aau=[`${r.city||"Hometown"} ${pick(["Elite","Select","Rise","Premier","Hoopers","Prospects"])}`,"Independent"];}return r.aau;}
+function needsPanel(){const n=needInfo();return `<div class="panel"><div class="row"><b class="grow">Team needs for next season</b><span class="sm muted">${schAvail()} scholarships open</span></div><div class="row" style="gap:16px;margin-top:6px;flex-wrap:wrap">${POS.map(p=>`<div><div class="sm muted">${POSNAME[p]}s</div><b class="num">${n.have[p]}/${IDEAL[p]}</b> ${n.need[p]>0?`<span class="tag amb">Need ${n.need[p]}</span>`:`<span class="sm muted">Set</span>`}</div>`).join("")}</div><div class="sm muted" style="margin-top:6px">Returning players plus commits. Recruits at a position you need see more playing time, so you're a better fit for them.</div></div>`;}
+function fitPanel(r){const p=prios(r),f=fitScore(r),pl=pullOf(r);return `<div class="panel sm"><div class="row"><span class="grow"><b>What matters to him:</b> ${esc(p[0])}, then ${esc(p[1])}</span></div>
+ <div style="margin-top:6px">${p.map(k=>{const v=Math.round(prioScore(r,k));return `<div class="row"><span class="grow">${esc(k)}</span><b class="num">${v}</b></div><div class="bar" style="margin:2px 0 6px"><i style="width:${v}%"></i></div>`;}).join("")}</div>
+ <div class="row"><span class="grow">Your fit</span><b class="num">${f}%</b></div><div class="row"><span class="grow">Prestige match</span><b>${pl>=1?"Strong":pl>=.7?"Fair":pl>=.45?"Reach":"Long shot"}</b></div><div class="row"><span class="grow">Projected role</span><b>${roleProj(r)}</b></div></div>`;}
+function racePanel(r){const L=topSchools(r);return `<h3 style="margin-top:12px">Top schools</h3><div class="list">${L.map(([id,v])=>{const t=T(id);return `<div class="li">${badge(t,26)}<div class="grow"><div class="sm" style="${id===S.user?"font-weight:700":""}">${esc(t.name)}${id===S.user&&!r.off?' <span class="muted">(no offer)</span>':""}</div><div class="bar" style="margin-top:3px"><i style="width:${v}%"></i></div></div><b class="num">${v}</b></div>`;}).join("")}</div><p class="sm muted">He commits when one school reaches 100, or pulls clearly ahead late in the process. Without an offer from you, his interest tops out at 85.</p>`;}
 
 /* ============ sim controls ============ */
 let BUSY=false;
@@ -1076,16 +1116,16 @@ function recruitView(){
  const sa=schAvail();
  h+=autoRecCard();
  h+=`<div class="panel row" style="flex-wrap:wrap"><div class="grow"><div class="lcd" style="font-size:32px;color:var(--ink)">${S.pts}</div><div class="sm muted">Points left this week (${ptsPerWeek()}/week)</div></div><div style="text-align:right"><div><b class="num">${sa}</b> <span class="sm muted">scholarships open</span></div><div><b class="num">${S.cv}</b> <span class="sm muted">official visits left</span></div><div><b class="num">${myCommits().length}</b> <span class="sm muted">commits</span></div></div></div>
- <p class="sm muted" style="margin:0">Call 5 pts · Home visit 25 pts · Official visit free (limited). One contact per recruit each week. Recruits commit once interest hits 100 and you've offered.</p>`;
- h+=`<div class="fgrid"><select data-act="rfilter" aria-label="Filter">${[["all","All recruits"],["tgt","My offers & targets"],["5","5-star"],["4","4-star"],["3","3-star"],["2","2-star"],["1","1-star"]].map(([k,l])=>`<option value="${k}" ${UI.rFilter===k?"selected":""}>${l}</option>`).join("")}</select><select data-act="rpos" aria-label="Position">${["all",...POS].map(p=>`<option value="${p}" ${UI.rPos===p?"selected":""}>${p==="all"?"All positions":p}</option>`).join("")}</select><select data-act="rstate" aria-label="Home state">${["all",...STATES.slice().sort()].map(s=>`<option value="${s}" ${(UI.rState||"all")===s?"selected":""}>${s==="all"?"All states":s}</option>`).join("")}</select><select data-act="rint" aria-label="Interest level">${[["all","Any interest"],["high","High interest (60+)"],["med","Medium (30-59)"],["low","Low (under 30)"]].map(([k,l])=>`<option value="${k}" ${(UI.rInt||"all")===k?"selected":""}>${l}</option>`).join("")}</select><select data-act="rsort" aria-label="Sort" style="grid-column:1/-1">${[["rank","Sort by national rank"],["int","Sort by interest"],["fit","Sort by fit"],["ht","Sort by height"]].map(([k,l])=>`<option value="${k}" ${(UI.rSort||"rank")===k?"selected":""}>${l}</option>`).join("")}</select></div>`;
+ <p class="sm muted" style="margin:0">Call 5 pts · Home visit 25 pts · Official visit free (limited). One contact per recruit each week. Every recruit has rival schools after him; tap a name to see the race.</p>`+needsPanel();
+ h+=`<div class="fgrid"><select data-act="rfilter" aria-label="Filter">${[["all","All recruits"],["tgt","My offers & targets"],["need","Positions I need"],["5","5-star"],["4","4-star"],["3","3-star"],["2","2-star"],["1","1-star"]].map(([k,l])=>`<option value="${k}" ${UI.rFilter===k?"selected":""}>${l}</option>`).join("")}</select><select data-act="rpos" aria-label="Position">${["all",...POS].map(p=>`<option value="${p}" ${UI.rPos===p?"selected":""}>${p==="all"?"All positions":p}</option>`).join("")}</select><select data-act="rstate" aria-label="Home state">${["all",...STATES.slice().sort()].map(s=>`<option value="${s}" ${(UI.rState||"all")===s?"selected":""}>${s==="all"?"All states":s}</option>`).join("")}</select><select data-act="rint" aria-label="Interest level">${[["all","Any interest"],["high","High interest (60+)"],["med","Medium (30-59)"],["low","Low (under 30)"]].map(([k,l])=>`<option value="${k}" ${(UI.rInt||"all")===k?"selected":""}>${l}</option>`).join("")}</select><select data-act="rsort" aria-label="Sort" style="grid-column:1/-1">${[["rank","Sort by national rank"],["int","Sort by interest"],["fit","Sort by fit"],["ht","Sort by height"]].map(([k,l])=>`<option value="${k}" ${(UI.rSort||"rank")===k?"selected":""}>${l}</option>`).join("")}</select></div>`;
  let list=S.recruits.filter(r=>r.to===null||r.to===S.user);
- if(UI.rFilter==="tgt")list=list.filter(r=>r.off||r.int>=40||r.to===S.user);else if(UI.rFilter!=="all")list=list.filter(r=>r.st===+UI.rFilter);
+ if(UI.rFilter==="tgt")list=list.filter(r=>r.off||r.int>=40||r.to===S.user);else if(UI.rFilter==="need")list=list.filter(r=>needInfo().need[r.pos]>0);else if(UI.rFilter!=="all")list=list.filter(r=>r.st===+UI.rFilter);
  if(UI.rPos!=="all")list=list.filter(r=>r.pos===UI.rPos);
  if(UI.rState&&UI.rState!=="all")list=list.filter(r=>r.hs===UI.rState);
  if(UI.rInt==="high")list=list.filter(r=>r.int>=60);else if(UI.rInt==="med")list=list.filter(r=>r.int>=30&&r.int<60);else if(UI.rInt==="low")list=list.filter(r=>r.int<30);
- if(UI.rSort==="int")list=list.slice().sort((a,b)=>b.int-a.int||a.rk-b.rk);else if(UI.rSort==="fit")list=list.slice().sort((a,b)=>recMult(b)-recMult(a)||a.rk-b.rk);else if(UI.rSort==="ht")list=list.slice().sort((a,b)=>htOf(b)-htOf(a)||a.rk-b.rk);
+ if(UI.rSort==="int")list=list.slice().sort((a,b)=>b.int-a.int||a.rk-b.rk);else if(UI.rSort==="fit")list=list.slice().sort((a,b)=>fitScore(b)-fitScore(a)||a.rk-b.rk);else if(UI.rSort==="ht")list=list.slice().sort((a,b)=>htOf(b)-htOf(a)||a.rk-b.rk);
  const shown=list.slice(0,50);
- h+=`<div class="list">${shown.map(r=>{const done=r.to===S.user,used=r.aw===S.week;return `<div class="li" style="flex-wrap:wrap"><span class="rk">${r.rk}</span><div class="grow"><div style="font-weight:600"><button class="lnk" data-act="recprof" data-v="${r.id}">${esc(r.fn+" "+r.ln)}</button> <span class="tag">${r.pos}</span> <span class="sm muted">${fmtHt(htOf(r))}, ${r.city?esc(r.city)+", ":""}${r.hs}</span></div><div class="row sm" style="flex-wrap:wrap;gap:4px 10px">${stars(r.st)}<span class="muted">${esc(roles(r)[0]||"Prospect")}</span><span class="muted">Interest ${r.int}</span><span class="muted">Fit ${Math.round(recMult(r)*100)}%</span>${r.off&&!done?`<span class="tag amb">Offered</span>`:""}${done?`<span class="tag amb">Committed</span>`:""}</div>${done?"":`<div class="bar" style="margin-top:5px"><i style="width:${r.int}%"></i></div>`}</div>
+ h+=`<div class="list">${shown.map(r=>{const done=r.to===S.user,used=r.lc===S.week;return `<div class="li" style="flex-wrap:wrap"><span class="rk">${r.rk}</span><div class="grow"><div style="font-weight:600"><button class="lnk" data-act="recprof" data-v="${r.id}">${esc(r.fn+" "+r.ln)}</button> <span class="tag">${r.pos}</span> <span class="sm muted">${fmtHt(htOf(r))}, ${r.city?esc(r.city)+", ":""}${r.hs}</span></div><div class="row sm" style="flex-wrap:wrap;gap:4px 10px">${stars(r.st)}<span class="muted">${esc(roles(r)[0]||"Prospect")}</span><span class="muted">Interest ${r.int}</span><span class="muted">Fit ${fitScore(r)}%</span>${needInfo().need[r.pos]>0?`<span class="tag">Need</span>`:""}${CIRC_SHORT[aauOf(r)[1]]?`<span class="tag">${CIRC_SHORT[aauOf(r)[1]]}</span>`:""}${done?"":(()=>{const L=topSchools(r);return L[0][0]!==S.user&&L[0][1]>=50?`<span class="muted">Leader: ${esc(T(L[0][0]).ab)} ${L[0][1]}</span>`:""})()}${r.off&&!done?`<span class="tag amb">Offered</span>`:""}${done?`<span class="tag amb">Committed</span>`:""}</div>${done?"":`<div class="bar" style="margin-top:5px"><i style="width:${r.int}%"></i></div>`}</div>
   ${done?"":`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`}</div>`;}).join("")||`<div class="li muted">No recruits match. Try another filter.</div>`}</div>`;
  if(list.length>50)h+=`<p class="sm muted">Showing the top 50 of ${list.length}. Narrow with the filters above.</p>`;
  return h;}
@@ -1167,7 +1207,7 @@ function recProfiles(){const best={};S.recruits.forEach(r=>{const x=X(r);if(!r.c
  r.hsst={ppg:+clamp(9+(r.ovr-40)*.55+gauss()*3,6,38).toFixed(1),rpg:+clamp(2.5+(x.reb-40)*.2+gauss(),1,16).toFixed(1),apg:+clamp(1+(x.pas-40)*.15+gauss()*.8,.3,10).toFixed(1)};const aw=[];
  if(r.rk<=24)aw.push("National All-American Game");if(!best[r.hs]){best[r.hs]=1;if(r.st>=3)aw.push(`${r.hs} Player of the Year`);}
  if(r.st>=4)aw.push(R()<.8?"All-State first team":"All-State second team");else if(r.st===3&&R()<.6)aw.push("All-State honorable mention");else if(R()<.5)aw.push("All-Conference first team");
- if(r.st>=3&&R()<.3)aw.push(pick(["Holiday tournament MVP","State champion","Region Player of the Year","1,000-point scorer"]));r.aw=aw;});}
+ if(r.st>=3&&R()<.3)aw.push(pick(["Holiday tournament MVP","State champion","Region Player of the Year","1,000-point scorer"]));r.awd=aw;});}
 const OFFS={"Motion":"Ball movement and cutting. Rewards good passers.","Pace and space":"Spread the floor and hunt threes. Rewards shooters.","Run and gun":"Push the tempo for transition buckets. Rewards speed.","Post-centric":"Play through the bigs. Rewards finishers inside.","Grind it out":"Slow, deliberate half-court sets that lean on defense."};
 const DEFS={"Man-to-man":"Straight-up man defense with no gimmicks.","2-3 zone":"Packs the paint. Vulnerable to good shooting teams.","Full-court press":"Speeds teams up and forces turnovers. Beaten by good ball handlers.","Pack line":"Walls off the lane and concedes some threes.","Switch everything":"Switches every screen. Can get punished inside."};
 const PACE={"Motion":0,"Pace and space":4,"Run and gun":10,"Post-centric":-3,"Grind it out":-10};
@@ -1191,14 +1231,14 @@ function openTeam(id){const t=T(id);if(!t)return;const st=styleOf(t),co=t.id===S
  ${progPanel(t)}
  ${gs.length?`<h3 style="margin-top:14px">Recent results</h3><div class="list">${gs.map(g=>{const h=g.h===id,o=T(h?g.a:g.h),my=h?g.hs:g.as,op=h?g.as:g.hs;return `<div class="li">${badge(o,26)}<div class="grow sm">${h||g.n?"vs":"at"} ${esc(o.name)}</div><span class="${my>op?"W":"L"}">${my>op?"W":"L"}</span> <span class="num">${my}-${op}</span></div>`;}).join("")}</div>`:""}
  <button class="btn" data-act="close" style="width:100%;margin-top:12px">Close</button>`;render();}
-function openRecruit(id){const r=S.recruits.find(x=>x.id===id);if(!r)return;UI.recOpen=id;X(r);if(!r.hsst)recProfiles();
- const done=r.to===S.user,other=r.to!==null&&r.to!==S.user,used=r.aw===S.week;
+function openRecruit(id){const r=S.recruits.find(x=>x.id===id);if(!r)return;UI.recOpen=id;X(r);if(!r.hsst||!r.awd)recProfiles();
+ const done=r.to===S.user,other=r.to!==null&&r.to!==S.user,used=r.lc===S.week;
  UI.modal=`<div class="row" style="gap:12px"><div class="grow"><div class="sm muted">No. ${r.rk} nationally · Class of ${S.year+1}</div><h3 style="margin:2px 0 4px">${esc(r.fn+" "+r.ln)}</h3><div class="row" style="gap:8px">${stars(r.st)}<span class="tag">${r.pos}</span><span class="sm muted">${fmtHt(r.ht)}</span></div></div><div style="text-align:center"><div class="lcd" style="color:var(--ink)">${r.ovr}</div><div class="sm muted">Pot ${grade(r)}</div></div></div>
- <div class="panel sm"><div><b>Hometown:</b> ${esc(r.city)}, ${r.hs}</div><div><b>High school:</b> ${esc(r.school)}</div><div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">${roleTags(r)}</div></div>
+ <div class="panel sm"><div><b>Hometown:</b> ${esc(r.city)}, ${r.hs}</div><div><b>High school:</b> ${esc(r.school||"International")}</div><div><b>AAU:</b> ${esc(aauOf(r)[0])} <span class="tag">${esc(aauOf(r)[1])}</span></div><div class="row" style="gap:6px;margin-top:8px;flex-wrap:wrap">${roleTags(r)}</div></div>
  <div class="sm muted" style="font-weight:600">Senior season</div><div class="panel row" style="justify-content:space-around;text-align:center;margin-top:4px">${[["PPG",r.hsst.ppg],["RPG",r.hsst.rpg],["APG",r.hsst.apg]].map(([k,v])=>`<div><div class="lcd" style="font-size:28px;color:var(--ink)">${v}</div><div class="sm muted">${k}</div></div>`).join("")}</div>
- ${r.aw&&r.aw.length?`<h3>Awards</h3><div class="list">${r.aw.map(a=>`<div class="li sm">🏅 ${esc(a)}</div>`).join("")}</div>`:""}
+ ${r.awd&&r.awd.length?`<h3>Awards</h3><div class="list">${r.awd.map(a=>`<div class="li sm">🏅 ${esc(a)}</div>`).join("")}</div>`:""}
  <h3 style="margin-top:14px">Ratings</h3>${attrBars(r)}
- <h3 style="margin-top:16px">Recruitment</h3>${other?`<p class="muted">Committed to ${esc(T(r.to).name)}.</p>`:done?`<p><span class="tag amb">Committed to ${esc(T(S.user).name)}</span></p>`:`<div class="row sm"><span class="grow">Interest in ${esc(T(S.user).name)}</span><b class="num">${r.int}/100</b></div><div class="bar" style="margin:4px 0 6px"><i style="width:${r.int}%"></i></div><div class="sm muted">Fit ${Math.round(recMult(r)*100)}% · ${r.off?"Offered":"No offer yet"} · ${S.pts} points left this week</div><div class="sm muted" style="margin-top:6px">Scouting: ${traitTxt(r)}${r.rc?" · Reclassified":""}${r.sgn?" · Signed early":""}</div>${S.phase==="season"?recNilRow(r):""}${S.phase==="season"?`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`:""}`}
+ <h3 style="margin-top:16px">Recruitment</h3>${other?`<p class="muted">Committed to ${esc(T(r.to).name)}.</p>`:done?`<p><span class="tag amb">Committed to ${esc(T(S.user).name)}</span></p>`:`<div class="row sm"><span class="grow">Interest in ${esc(T(S.user).name)}</span><b class="num">${r.int}/100</b></div><div class="bar" style="margin:4px 0 6px"><i style="width:${r.int}%"></i></div><div class="sm muted">${r.off?"Offered":"No offer yet"} · ${S.pts} points left this week</div>${fitPanel(r)}${racePanel(r)}<div class="sm muted" style="margin-top:6px">Scouting: ${traitTxt(r)}${r.rc?" · Reclassified":""}${r.sgn?" · Signed early":""}</div>${S.phase==="season"?recNilRow(r):""}${S.phase==="season"?`<div class="rbtns"><button class="btn sm" data-act="rec" data-k="call" data-v="${r.id}" ${used?"disabled":""}>Call</button><button class="btn sm" data-act="rec" data-k="home" data-v="${r.id}" ${used?"disabled":""}>Home visit</button><button class="btn sm" data-act="rec" data-k="visit" data-v="${r.id}" ${used||!S.cv?"disabled":""}>Official visit</button><button class="btn sm ${r.off?"":"pri"}" data-act="rec" data-k="offer" data-v="${r.id}">${r.off?"Pull offer":"Offer"}</button></div>`:""}`}
  <button class="btn" data-act="close" style="width:100%;margin-top:14px">Close</button>`;render();}
 
 /* ============ team preview on the setup screen ============ */
