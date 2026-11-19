@@ -135,6 +135,7 @@ select,input[type=text],textarea{font:inherit;font-size:16px;color:var(--ink);ba
 @media (max-width:440px){.nsm{display:none}h2{font-size:20px}.wrap{padding-left:12px;padding-right:12px}}
 .prog{position:fixed;left:50%;transform:translateX(-50%);bottom:calc(76px + env(safe-area-inset-bottom,0px));background:var(--board);color:var(--board-ink);padding:10px 16px;border-radius:9px;z-index:60;font-weight:600;font-size:14px;box-shadow:0 4px 16px rgba(0,0,0,.3)}
 .mv{display:inline-flex;gap:4px;margin-left:6px;vertical-align:middle}.mv .btn{min-height:30px;padding:2px 8px;font-size:12px}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:10px;margin-top:18px}.pcard{display:flex;flex-direction:column;align-items:center;gap:6px;padding:18px 10px;border:1px solid var(--line,#e5e7eb);border-radius:14px;background:var(--card,#fff);color:var(--ink);font:inherit;cursor:pointer}.pcard:active{transform:scale(.98)}.pav{display:inline-flex;align-items:center;justify-content:center;width:56px;height:56px;border-radius:50%;color:#fff;font-weight:800;font-size:24px;flex:none}.pav.sm{width:36px;height:36px;font-size:16px}
 .bdg2{flex:none;display:inline-block;vertical-align:middle;filter:drop-shadow(0 1px 1px rgba(0,0,0,.18))}
 .court{height:6px;background:repeating-linear-gradient(90deg,var(--amber) 0 26px,transparent 26px 34px);margin-top:16px;opacity:.9}
 @media (prefers-reduced-motion:no-preference){.toast{animation:pop .18s ease-out}@keyframes pop{from{opacity:0;transform:translate(-50%,8px)}}}
@@ -914,6 +915,39 @@ function racePanel(r){const L=topSchools(r),s=r.stg||0,show=L.filter(([id])=>id!
  ${r.cut?`<p class="sm" style="color:var(--red,#dc2626)">He cut ${esc(T(S.user).name)} from his list.</p>`:""}<div class="list">${show.map(([id,v])=>{const t=T(id);return `<div class="li">${badge(t,26)}<div class="grow"><div class="sm" style="${id===S.user?"font-weight:700":""}">${esc(t.name)}${id===S.user&&!r.off?' <span class="muted">(no offer)</span>':""}</div><div class="bar" style="margin-top:3px"><i style="width:${v}%"></i></div></div><b class="num">${v}</b></div>`;}).join("")}</div>
  <p class="sm muted">He trims his list to 10, then 5, then 3 as the season goes on, and announces from his final three. Once he’s down to five, the first school to reach 100 gets an early commitment. Fall out of the cut and you're done. Without your offer his interest tops out at 85.</p>`;}
 
+/* ============ player profiles (separate saves per person on one device) ============ */
+let PROFILES=[],PROFILE=null;const PCOLORS=["#2563eb","#dc2626","#16a34a","#9333ea","#ea580c","#0891b2","#db2777","#4b5563"];
+function loadProfiles(){try{PROFILES=JSON.parse(localStorage.getItem("hd:profiles")||"[]")||[];}catch(e){PROFILES=[];}}
+function saveProfiles(){try{localStorage.setItem("hd:profiles",JSON.stringify(PROFILES));}catch(e){toast("Couldn't save players on this device");}}
+function mySlots(){return PROFILE?SLOTS.filter(m=>m.owner===PROFILE.id):[];}
+function slotCount(id){return SLOTS.filter(m=>m.owner===id).length;}
+async function pinHash(pin,id){const s="hd|"+id+"|"+pin;try{if(crypto&&crypto.subtle){const b=await crypto.subtle.digest("SHA-256",new TextEncoder().encode(s));return Array.from(new Uint8Array(b)).map(x=>x.toString(16).padStart(2,"0")).join("");}}catch(e){}let h=5381;for(const c of s)h=((h<<5)+h+c.charCodeAt(0))>>>0;return "x"+h.toString(16);}
+function enterProfile(p){PROFILE=p;try{localStorage.setItem("hd:lastProfile",p.id);}catch(e){}UI=FRESHUI(mySlots().length?"manager":"setup");render();window.scrollTo(0,0);}
+function profForm(first){return `<label class="sm" style="display:block">Name<input type="text" id="pfName" maxlength="20" autocomplete="off" placeholder="Your name" style="width:100%;margin:4px 0 12px"></label>
+ <label class="sm" style="display:block">4-digit PIN (optional)<input type="password" id="pfPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="Leave blank for no PIN" style="width:100%;margin:4px 0 12px"></label>
+ ${first&&SLOTS.length?`<p class="sm muted">The ${SLOTS.length} dynast${SLOTS.length===1?"y":"ies"} already on this device will go to this player.</p>`:""}
+ <div class="btns"><button class="btn pri" data-act="profcreate">Create player</button>${first?"":`<button class="btn" data-act="close">Cancel</button>`}</div>`;}
+async function profCreate(){const n=(document.getElementById("pfName")||{}).value,pin=((document.getElementById("pfPin")||{}).value||"").trim(),name=(n||"").trim();
+ if(!name){toast("Enter a name");return;}if(PROFILES.some(p=>p.name.toLowerCase()===name.toLowerCase())){toast("That name is taken");return;}if(pin&&!/^\d{4}$/.test(pin)){toast("PIN must be 4 digits");return;}
+ const p={id:"p"+Date.now().toString(36),name,color:PCOLORS[PROFILES.length%PCOLORS.length],created:Date.now()};p.pin=pin?await pinHash(pin,p.id):"";
+ const first=!PROFILES.length;PROFILES.push(p);saveProfiles();
+ if(first){for(const m of SLOTS)if(!m.owner){m.owner=p.id;await st.put("meta",m.id,m).catch(()=>{});}}
+ UI.modal=null;toast(`Welcome, ${name}!`);enterProfile(p);}
+function profPick(id){const p=PROFILES.find(x=>x.id===id);if(!p)return;if(!p.pin){enterProfile(p);return;}
+ UI.modal=`<div style="text-align:center"><span class="pav" style="background:${p.color};margin:0 auto 8px">${esc(p.name[0].toUpperCase())}</span><h3 style="margin:0 0 4px">${esc(p.name)}</h3><p class="sm muted">Enter your PIN</p><input type="password" id="pfLogin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" aria-label="PIN" style="width:9em;text-align:center;font-size:24px;letter-spacing:.4em;margin:6px auto 14px;display:block"><div class="btns" style="justify-content:center"><button class="btn pri" data-act="proflogin" data-v="${p.id}">Log in</button><button class="btn" data-act="close">Cancel</button></div></div>`;render();setTimeout(()=>{const el=document.getElementById("pfLogin");if(el)el.focus();},50);}
+async function profLogin(id){const p=PROFILES.find(x=>x.id===id),el=document.getElementById("pfLogin");if(!p||!el)return;if(await pinHash(el.value.trim(),p.id)===p.pin){UI.modal=null;enterProfile(p);}else{toast("Wrong PIN");el.value="";el.focus();}}
+async function profSwitch(){if(S){await Promise.resolve(flushSave());S=null;}PROFILE=null;await refreshSlots();UI=FRESHUI("profiles");render();window.scrollTo(0,0);}
+async function profDelete(){const p=PROFILE;if(!p)return;if(UI.pdelArm!==p.id){UI.pdelArm=p.id;render();setTimeout(()=>{if(UI.pdelArm===p.id){UI.pdelArm=null;if(!S)render();}},4000);return;}
+ for(const m of mySlots())await Promise.all([st.del("saves",m.id),st.del("meta",m.id)]).catch(()=>{});PROFILES=PROFILES.filter(x=>x.id!==p.id);saveProfiles();toast(`Removed ${p.name}`);await profSwitch();}
+async function profSetPin(){const p=PROFILE,el=document.getElementById("pfNewPin");if(!p||!el)return;const v=el.value.trim();if(v&&!/^\d{4}$/.test(v)){toast("PIN must be 4 digits");return;}p.pin=v?await pinHash(v,p.id):"";const q=PROFILES.find(x=>x.id===p.id);if(q)q.pin=p.pin;saveProfiles();UI.modal=null;toast(v?"PIN updated":"PIN removed");render();}
+function pinModal(){UI.modal=`<h3>${PROFILE.pin?"Change or remove your PIN":"Add a PIN"}</h3><input type="password" id="pfNewPin" inputmode="numeric" pattern="[0-9]*" maxlength="4" autocomplete="off" placeholder="New 4-digit PIN, or blank to remove" style="width:100%;margin:12px 0"><div class="btns"><button class="btn pri" data-act="profpinsave">Save</button><button class="btn" data-act="close">Cancel</button></div>`;render();}
+function profilesView(){const P=PROFILES,last=(()=>{try{return localStorage.getItem("hd:lastProfile");}catch(e){return null;}})();
+ const top=`<main class="wrap"><section class="hero"><h1>Hardwood<br>Dynasty</h1><p>${P.length?"Who's playing?":"Create your player to get started."}</p><div class="court"></div></section>`;
+ if(!P.length)return top+`<h2>New player</h2><div class="panel">${profForm(true)}</div><p class="sm muted">Each player gets their own dynasties on this device. Add more players any time.</p></main>`;
+ return top+`<div class="pgrid">${P.slice().sort((a,b)=>(b.id===last)-(a.id===last)).map(p=>{const n=slotCount(p.id);return `<button class="pcard" data-act="profpick" data-v="${p.id}"><span class="pav" style="background:${p.color}">${esc(p.name[0].toUpperCase())}</span><b>${esc(p.name)}</b><span class="sm muted">${p.pin?"🔒 ":""}${n} dynast${n===1?"y":"ies"}</span></button>`;}).join("")}<button class="pcard" data-act="profadd"><span class="pav" style="background:var(--line,#e5e7eb);color:var(--ink)">+</span><b>Add player</b><span class="sm muted">New profile</span></button></div>
+ <p class="sm muted" style="margin-top:14px">Each player has their own dynasties, saved on this device. A PIN keeps others out of your saves. It's a simple lock for sharing a device, not real security, and a forgotten PIN can't be recovered, so export dynasties you care about.</p></main>`;}
+function profBar(){return PROFILE?`<div class="panel row" style="gap:10px;margin-top:14px"><span class="pav sm" style="background:${PROFILE.color}">${esc(PROFILE.name[0].toUpperCase())}</span><div class="grow"><b>${esc(PROFILE.name)}</b><div class="sm muted">${PROFILE.pin?"PIN on":"No PIN"}</div></div><button class="btn sm" data-act="profpin">${PROFILE.pin?"PIN":"Add PIN"}</button><button class="btn sm pri" data-act="profswitch">Switch player</button></div>`:"";}
+
 /* ============ sim controls ============ */
 let BUSY=false;
 function prog(on,txt){let el=document.getElementById("prog");if(!on){if(el)el.remove();return;}if(!el){el=document.createElement("div");el.id="prog";el.className="prog";el.setAttribute("role","status");document.body.appendChild(el);}if(txt)el.textContent=txt;}
@@ -943,35 +977,35 @@ const st={get:(s,k)=>STORE==="idb"?idb(s,"readonly",o=>o.get(k)):new Promise(r=>
  put:(s,k,v)=>STORE==="idb"?idb(s,"readwrite",o=>o.put(v,k)):new Promise(r=>{localStorage.setItem(`hd:${s}:${k}`,JSON.stringify(v));r();}),
  del:(s,k)=>STORE==="idb"?idb(s,"readwrite",o=>o.delete(k)):new Promise(r=>{localStorage.removeItem(`hd:${s}:${k}`);r();}),
  all:s=>STORE==="idb"?idb(s,"readonly",o=>o.getAll()):new Promise(r=>r(Object.keys(localStorage).filter(k=>k.startsWith(`hd:${s}:`)).map(k=>JSON.parse(localStorage.getItem(k)))))};
-function metaOf(){const u=T(S.user),old=SLOTS.find(m=>m.id===S.slot);return{id:S.slot,name:old&&old.name?old.name:`${S.coach.name}'s dynasty`,teamId:S.user,team:u.name,season:`${S.year}-${String((S.year+1)%100).padStart(2,"0")}`,rec:`${u.w}-${u.l}`,stage:S.phase==="off"?"Offseason":dayLabel(Math.min(S.day,LAST)),coach:S.coach.name,updated:Date.now()};}
+function metaOf(){const u=T(S.user),old=SLOTS.find(m=>m.id===S.slot);return{id:S.slot,name:old&&old.name?old.name:`${S.coach.name}'s dynasty`,teamId:S.user,team:u.name,season:`${S.year}-${String((S.year+1)%100).padStart(2,"0")}`,rec:`${u.w}-${u.l}`,stage:S.phase==="off"?"Offseason":dayLabel(Math.min(S.day,LAST)),coach:S.coach.name,owner:S.owner||(PROFILE?PROFILE.id:undefined),updated:Date.now()};}
 function save(){if(!S)return;clearTimeout(saveT);saveT=setTimeout(flushSave,1500);}
-function flushSave(){clearTimeout(saveT);saveT=null;if(!S)return Promise.resolve();if(!S.slot)S.slot="d"+Date.now().toString(36);const m=metaOf();SLOTS=SLOTS.filter(x=>x.id!==m.id).concat([m]);return Promise.all([st.put("saves",S.slot,packSave(S)),st.put("meta",S.slot,m)]).catch(()=>toast("Couldn't save. Storage on this device may be full."));}
+function flushSave(){clearTimeout(saveT);saveT=null;if(!S)return Promise.resolve();if(!S.owner&&PROFILE)S.owner=PROFILE.id;if(!S.slot)S.slot="d"+Date.now().toString(36);const m=metaOf();SLOTS=SLOTS.filter(x=>x.id!==m.id).concat([m]);return Promise.all([st.put("saves",S.slot,packSave(S)),st.put("meta",S.slot,m)]).catch(()=>toast("Couldn't save. Storage on this device may be full."));}
 function load(){try{const s=localStorage.getItem(KEY);if(s)return JSON.parse(s);}catch(e){}return null;}
 window.addEventListener("pagehide",()=>{if(saveT)flushSave();});document.addEventListener("visibilitychange",()=>{if(document.hidden&&saveT)flushSave();});
 const FRESHUI=scr=>({tab:"home",seg:{},modal:null,rFilter:"all",rPos:"all",confView:null,bkReg:0,screen:scr});
-function postLoad(o){S=unpackSave(o);migratePos(S);UI=FRESHUI("game");if(!S.hist)S.hist=[];if(S.phase==="season"){if(S.nil===undefined)S.nil=nilBudget();if(!S.goals)setGoals();if(!S.req)S.req=[];}try{fixSchools();}catch(e){}calcStr();if(!S.awards&&S.phase==="season")S.awards={year:S.year,pre:makeAwards(true),post:null};render();save();window.scrollTo(0,0);}
+function postLoad(o){S=unpackSave(o);migratePos(S);if(!S.owner&&PROFILE)S.owner=PROFILE.id;UI=FRESHUI("game");if(!S.hist)S.hist=[];if(S.phase==="season"){if(S.nil===undefined)S.nil=nilBudget();if(!S.goals)setGoals();if(!S.req)S.req=[];}try{fixSchools();}catch(e){}calcStr();if(!S.awards&&S.phase==="season")S.awards={year:S.year,pre:makeAwards(true),post:null};render();save();window.scrollTo(0,0);}
 async function openSlot(id){const o=await st.get("saves",id).catch(()=>null);if(!o){toast("Couldn't open that dynasty");return;}if(!o.slot)o.slot=id;postLoad(o);}
 async function refreshSlots(){SLOTS=(await st.all("meta").catch(()=>[]))||[];}
 async function delSlot(id){if(UI.delArm!==id){UI.delArm=id;render();setTimeout(()=>{if(UI.delArm===id){UI.delArm=null;if(!S)render();}},3500);return;}
- UI.delArm=null;await Promise.all([st.del("saves",id),st.del("meta",id)]).catch(()=>{});SLOTS=SLOTS.filter(m=>m.id!==id);toast("Dynasty deleted");if(!SLOTS.length)UI.screen="setup";render();}
+ UI.delArm=null;await Promise.all([st.del("saves",id),st.del("meta",id)]).catch(()=>{});SLOTS=SLOTS.filter(m=>m.id!==id);toast("Dynasty deleted");if(!mySlots().length)UI.screen="setup";render();}
 function openRename(id){const m=SLOTS.find(x=>x.id===id);if(!m)return;UI.modal=`<h3>Rename dynasty</h3><input type="text" id="rnIn" value="${esc(m.name)}" maxlength="40" aria-label="Dynasty name" style="width:100%;margin:12px 0"><div class="btns"><button class="btn pri" data-act="renamesave" data-v="${id}">Save</button><button class="btn" data-act="close">Cancel</button></div>`;render();}
 async function saveRename(id){const m=SLOTS.find(x=>x.id===id),el=document.getElementById("rnIn"),v=(el&&el.value||"").trim();if(m&&v){m.name=v;await st.put("meta",id,m).catch(()=>{});}UI.modal=null;render();}
 async function exportSlot(id){const o=S&&S.slot===id?S:await st.get("saves",id).catch(()=>null);if(!o)return;const m=SLOTS.find(x=>x.id===id)||{};
  const a=document.createElement("a");a.href=URL.createObjectURL(new Blob([JSON.stringify(o)],{type:"application/json"}));a.download=((m.name||"dynasty").replace(/[^\w\- ]+/g,"").trim().replace(/\s+/g,"-")||"dynasty")+".json";document.body.appendChild(a);a.click();setTimeout(()=>{URL.revokeObjectURL(a.href);a.remove();},2000);toast("Exporting dynasty file");}
-function importFile(file){if(!file)return;const fr=new FileReader();fr.onload=async()=>{try{const o=JSON.parse(fr.result);if(!o||!Array.isArray(o.teams)||!o.coach)throw 0;o.slot="d"+Date.now().toString(36);const prev=S;S=o;const m=metaOf();S=prev;m.name+=" (imported)";
+function importFile(file){if(!file)return;const fr=new FileReader();fr.onload=async()=>{try{const o=JSON.parse(fr.result);if(!o||!Array.isArray(o.teams)||!o.coach)throw 0;o.slot="d"+Date.now().toString(36);if(PROFILE)o.owner=PROFILE.id;const prev=S;S=o;const m=metaOf();S=prev;m.name+=" (imported)";
  await st.put("saves",o.slot,o);await st.put("meta",o.slot,m);SLOTS.push(m);UI.screen="manager";toast("Dynasty imported");render();}catch(e){toast("That file isn't a Hardwood Dynasty save");}};fr.readAsText(file);}
 function ago(ts){const m=Math.round((Date.now()-ts)/60000);return m<1?"just now":m<60?`${m} min ago`:m<1440?`${Math.round(m/60)} hr ago`:`${Math.round(m/1440)} days ago`;}
-function managerView(){const list=SLOTS.slice().sort((a,b)=>b.updated-a.updated);
+function managerView(){const list=mySlots().sort((a,b)=>b.updated-a.updated);
  return `<main class="wrap"><section class="hero"><h1>Hardwood<br>Dynasty</h1><p>Pick up where you left off, or start a new program.</p><div class="court"></div></section>
  <div class="row" style="justify-content:space-between;margin:20px 0 10px"><h2 style="margin:0">Your dynasties</h2><button class="btn pri sm" data-act="newdyn">New dynasty</button></div>
  <div class="list">${list.map(m=>{const t=TEAMDEF[m.teamId];const armed=UI.delArm===m.id;return `<div class="li" style="flex-wrap:wrap">${t?badge(t,42):""}<div class="grow"><div style="font-weight:700">${esc(m.name)}</div><div class="sm muted">${esc(m.team)}, ${esc(m.season)}, ${esc(m.rec)} · ${esc(m.stage)}</div><div class="sm muted">Coach ${esc(m.coach)} · played ${ago(m.updated)}</div></div>
   <div class="rbtns"><button class="btn sm pri" data-act="loaddyn" data-v="${m.id}">Play</button><button class="btn sm" data-act="renamedyn" data-v="${m.id}">Rename</button><button class="btn sm" data-act="exportdyn" data-v="${m.id}">Export</button><button class="btn sm" data-act="deldyn" data-v="${m.id}" style="${armed?"background:var(--loss);color:#fff;border-color:var(--loss)":""}">${armed?"Confirm":"Delete"}</button></div></div>`;}).join("")}</div>
  ${list.some(m=>UI.delArm===m.id)?`<p class="sm" style="color:var(--loss)">Tap Confirm to delete that dynasty for good.</p>`:""}
  <div class="btns"><label class="btn sm" style="cursor:pointer">Import a dynasty file<input type="file" accept=".json,application/json" data-act="importdyn" hidden></label></div>
- <p class="sm muted">Dynasties are saved on this device and browser. Export one to back it up or move it to another device or to the installed app.</p></main>`;}
+ <p class="sm muted">Dynasties are saved on this device and browser. Export one to back it up or move it to another device or to the installed app.</p>${profBar()}<div class="btns"><button class="btn sm" data-act="profdel" style="${UI.pdelArm&&PROFILE&&UI.pdelArm===PROFILE.id?"background:var(--loss);color:#fff;border-color:var(--loss)":""}">${UI.pdelArm&&PROFILE&&UI.pdelArm===PROFILE.id?"Tap again to delete this player and all their dynasties":"Delete this player"}</button></div></main>`;}
 async function init(){TEAMDEF.forEach(realignTeam);try{await DBP;}catch(e){STORE="ls";}
  const old=load();if(old){try{old.slot=old.slot||"d"+Date.now().toString(36);S=old;await flushSave();localStorage.removeItem(KEY);}catch(e){}S=null;}
- await refreshSlots();UI.screen=SLOTS.length?"manager":"setup";render();}
+ await refreshSlots();loadProfiles();if(PROFILES.length===1&&!PROFILES[0].pin){PROFILE=PROFILES[0];UI.screen=mySlots().length?"manager":"setup";}else UI.screen="profiles";render();}
 
 /* ============ UI ============ */
 const ICONS={news:'<rect x="3" y="4" width="15" height="16" rx="2"/><path d="M18 8h3v10a2 2 0 0 1-2 2M7 8h7M7 12h7M7 16h4"/>',home:'<path d="M3 11l9-7 9 7v9a1 1 0 0 1-1 1h-5v-6H9v6H4a1 1 0 0 1-1-1z"/>',games:'<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',roster:'<circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-6 6-6s6 2.7 6 6"/><circle cx="17" cy="9" r="2.6"/><path d="M15.5 14.2c3 .2 5.5 2.6 5.5 5.8"/>',recruit:'<path d="M12 3l2.7 5.6 6.1.9-4.4 4.3 1 6.1L12 17l-5.4 2.9 1-6.1L3.2 9.5l6.1-.9z"/>',rank:'<path d="M5 20V10M12 20V4M19 20v-7"/>',office:'<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2M3 13h18"/>'};
@@ -984,7 +1018,7 @@ function grade(p){const v=p.pot;return v>=90?"A+":v>=85?"A":v>=80?"B+":v>=75?"B"
 
 function render(){
  const app=document.getElementById("app");
- if(!S){app.innerHTML=(UI.screen==="manager"&&SLOTS.length?managerView():setupView())+(UI.modal?`<div class="modal" data-act="close"><div class="sheet" role="dialog" aria-modal="true" data-stop="1"><button class="xbtn" data-act="close" aria-label="Close">✕</button>${UI.modal}</div></div>`:"");return;}
+ if(!S){app.innerHTML=(!PROFILE||UI.screen==="profiles"?profilesView():UI.screen==="manager"&&mySlots().length?managerView():setupView())+(UI.modal?`<div class="modal" data-act="close"><div class="sheet" role="dialog" aria-modal="true" data-stop="1"><button class="xbtn" data-act="close" aria-label="Close">✕</button>${UI.modal}</div></div>`:"");return;}
  const u=T(S.user),r=rankOf(u.id);
  const season=`${S.year}-${String((S.year+1)%100).padStart(2,"0")}`;
  const when=S.phase==="season"?`${dateOf(Math.min(S.day,LAST))} · ${dayLabel(Math.min(S.day,LAST))}`:`Offseason: ${STEPS[S.step]}`;
@@ -999,7 +1033,7 @@ function setupView(){
  const confs=confNames();const cf=UI.setConf||"ACC";
  const list=TEAMDEF.map((t,i)=>({...t,i})).filter(t=>t.conf===cf).sort((a,b)=>b.pr-a.pr);
  return `<main class="wrap"><section class="hero"><h1>Hardwood<br>Dynasty</h1><p>Take over any of ${TEAMDEF.length} Division I programs. Build through recruiting and the portal, survive the carousel, and chase a banner in April.</p><div class="court"></div></section>
- ${SLOTS.length?`<button class="btn sm" data-act="mydyn" style="margin-top:16px">Back to my dynasties</button>`:""}
+ ${mySlots().length?`<button class="btn sm" data-act="mydyn" style="margin-top:16px">Back to my dynasties</button>`:""}${PROFILE?`<button class="btn sm" data-act="profswitch" style="margin-top:16px;margin-left:8px">Switch player (${esc(PROFILE.name)})</button>`:""}
  <h2>Your name</h2><input type="text" id="cname" placeholder="Coach name" value="${esc(UI.cname||"")}" style="width:100%" maxlength="30" aria-label="Coach name">
  <h2>Pick a program</h2><label class="sm muted" for="cfsel">Conference</label><br><select id="cfsel" data-act="setconf" style="width:100%;margin:4px 0 10px">${confs.map(c=>`<option ${c===cf?"selected":""}>${esc(c)}</option>`).join("")}</select>
  <div class="panel sm row" style="flex-wrap:wrap;gap:8px">${PRE&&PRE.realRosters?`<span class="grow">Real ${esc(PRE.realRosters)} rosters loaded. Team details now show the real players, and your dynasty will start with them.</span>`:`<span class="grow">Want real players? Load the rosters now and every team's details will show its real roster.</span>${ONSITE?`<button class="btn sm pri" data-act="presite">Load rosters from my site</button>`:""}<label class="btn sm" style="cursor:pointer">Load rosters file<input type="file" accept=".json,application/json" data-act="prefile" hidden></label>`}</div>
@@ -1504,6 +1538,14 @@ document.addEventListener("click",e=>{
  if(a==="newgame"){flushSave();S=null;UI=FRESHUI("setup");refreshSlots().then(render);window.scrollTo(0,0);return;}
  if(a==="mydyn"){Promise.resolve(flushSave()).then(refreshSlots).then(()=>{S=null;UI=FRESHUI("manager");render();window.scrollTo(0,0);});return;}
  if(a==="newdyn"){UI.screen="setup";render();window.scrollTo(0,0);return;}
+ if(a==="profpick"){profPick(v);return;}
+ if(a==="profadd"){UI.modal=`<h3>New player</h3>`+profForm(false);render();return;}
+ if(a==="profcreate"){profCreate();return;}
+ if(a==="proflogin"){profLogin(v);return;}
+ if(a==="profswitch"){profSwitch();return;}
+ if(a==="profdel"){profDelete();return;}
+ if(a==="profpin"){pinModal();return;}
+ if(a==="profpinsave"){profSetPin();return;}
  if(a==="loaddyn"){openSlot(v);return;}
  if(a==="deldyn"){delSlot(v);return;}
  if(a==="renamedyn"){openRename(v);return;}
