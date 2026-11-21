@@ -542,7 +542,7 @@ function recruitWeek(){
  recruitDecisions();
 }
 function recAct(id,kind,cat){const r=S.recruits.find(x=>x.id===id);if(!r||r.to!==null)return;if(r.cut){toast("He cut you from his list");return;}
- if(kind==="hcv"){if(r.hcv){toast("You already sent the head coach");return;}if((r.stg||0)<3){toast("Only for recruits in their top three");return;}if(S.pts<40){toast("Not enough recruiting points");return;}S.pts-=40;r.hcv=1;r.lc=S.week;const g=Math.round(ri(20,30)*recMult(r));r.int=Math.min(r.off?100:85,r.int+g);if(r.off&&r.int>=100&&schAvail()>0&&(r.stg||0)>=2)commitTo(r,S.user);toast(`Head coach visit: +${g} interest`);save();openRecruit(id);return;}
+ if(kind==="hcv"){if(r.hcv){toast("You already sent the head coach");return;}if((r.stg||0)<3){toast("Only for recruits in their top three");return;}if(S.pts<40){toast("Not enough recruiting points");return;}S.pts-=40;r.hcv=1;r.lc=S.week;const g=Math.round(ri(20,30)*recMult(r));r.int=Math.min(r.off?100:85,r.int+g);if(canCommitUser(r))commitTo(r,S.user);toast(`Head coach visit: +${g} interest`);save();openRecruit(id);return;}
  if(kind==="offer"){if(r.off){r.off=0;toast("Offer pulled");}else{if(S.recruits.filter(x=>x.off&&x.to===null).length>=schAvail()+4){toast("Too many open offers for your scholarships");return;}r.off=1;r.int=Math.min(100,r.int+8);toast("Scholarship offered");}save();render();return;}
  if(r.lc===S.week){toast("Already contacted this week");return;}
  if(!CATS.includes(cat))cat=bestPitch(r,kind);
@@ -551,7 +551,7 @@ function recAct(id,kind,cat){const r=S.recruits.find(x=>x.id===id);if(!r||r.to!=
  if(kind==="visit"){if(S.cv<=0){toast("No official visits left this season");return;}S.cv--;}
  S.pts-=cost;r.lc=S.week;const res=doPitch(r,kind,cat);
  let msg=pitchMsg(r,cat,res);
- if(!r.off&&r.int>85)r.int=85;if(r.off&&r.int>=100&&schAvail()>0&&(r.stg||0)>=2){commitTo(r,S.user);msg=`${r.fn} ${r.ln} committed!`;}else if(r.int>=100)msg+=" (maxed out; he commits once he cuts to a top five)";
+ if(!r.off&&r.int>85)r.int=85;if(canCommitUser(r)){commitTo(r,S.user);msg=`${r.fn} ${r.ln} committed!`;}else if(r.int>=100)msg+=" He's sold on you. He'll commit once he trims his list or pulls clear of the other schools.";
  toast(msg);save();if(UI.recOpen===r.id&&UI.modal)openRecruit(r.id);else render();}
 
 /* ============ end of season & offseason ============ */
@@ -745,10 +745,10 @@ function autoRecruit(){if(!S.autoRec||S.phase!=="season")return;const need=schAv
  const pool=S.recruits.filter(r=>r.to===null&&!r.cut&&pullOf(r)>=.6);
  const sc=r=>Math.pow(Math.max(1,(r.pot*.6+r.ovr*.4)+(needInfo().need[r.pos]>0?8:0)-35),1.5)*pwin(r);
  const tg=keySort(pool.filter(r=>pwin(r)>.18),sc).slice(0,need+3);
- S.recruits.forEach(r=>{if(r.off&&r.to===null&&!tg.includes(r))r.off=0;});tg.forEach(r=>{if(!r.off){r.off=1;r.int=Math.min(100,r.int+8);}});
+ S.recruits.forEach(r=>{if(r.aoff&&r.off&&r.to===null&&!tg.includes(r)){r.off=0;r.aoff=0;}});tg.forEach(r=>{if(!r.off){r.off=1;r.aoff=1;r.int=Math.min(100,r.int+8);}});
  keySort(tg,r=>r.int).forEach(r=>{if(r.lc===S.week)return;let k=S.pts>=25&&r.int<90?"home":S.pts>=5?"call":null;if(S.cv>0&&r.int>=55&&r.int<92&&r.st>=3)k="visit";if(!k)return;
   if(k==="visit")S.cv--;S.pts-=({call:5,home:25,visit:0})[k];r.lc=S.week;doPitch(r,k,bestPitch(r,k));
-  if(r.int>=100&&schAvail()>0&&(r.stg||0)>=2)commitTo(r,S.user);});}
+  if(canCommitUser(r))commitTo(r,S.user);});}
 function autoRecCard(){return `<div class="panel row" style="gap:10px"><div class="grow"><b>Recruiting assistant: ${S.autoRec?"on":"off"}</b><div class="sm muted">${S.autoRec?"Your staff makes offers and spends your points each week, and works the transfer portal in the offseason.":"You run recruiting yourself. Turn this on to let your staff handle it."}</div></div><button class="btn sm ${S.autoRec?"pri":""}" data-act="autorec">${S.autoRec?"Turn off":"Turn on"}</button></div>`;}
 function autoPortal(){const u=T(S.user);let n=0;keySort(S.portal.slice(),e=>e.p.ovr).forEach(e=>{if(u.roster.length+myCommits().length>=13||e.from===S.user||S.nil<e.ask||portalChance(e)<.35)return;
  S.portal.splice(S.portal.indexOf(e),1);if(R()<portalChance(e)){S.nil-=e.ask;e.p.s=z();u.roster.push(e.p);n++;S.nilDeals=S.nilDeals||{};S.nilDeals[e.p.id]=e.ask;news(`🔁 ${e.p.pos} ${e.p.fn} ${e.p.ln} (${e.p.ovr} OVR) transferred from ${fromName(e)} to ${u.name}.`);}});return n;}
@@ -951,7 +951,7 @@ function recruitDecisions(){const cls={};S.recruits.forEach(r=>{if(r.to!==null)c
    if(ns===3){r.cd=S.week+ri(2,4);if(ent.some(e=>e[0]===S.user))news(`📅 ${r.st}★ ${r.fn} ${r.ln} will announce in week ${r.cd}. Final three: ${ent.slice(0,3).map(e=>T(e[0]).name).join(", ")}.`);}
    else if(ns===2&&ent.some(e=>e[0]===S.user)&&r.st>=3)news(`📋 ${r.st}★ ${r.fn} ${r.ln} cut his list to five, and ${T(S.user).name} made it.`);}
   const ok=([id])=>id!==S.user||(r.off&&schAvail()>0),elig=ent.filter(ok);if(!elig.length)return;
-  if((elig[0][1]>=100&&(r.stg||0)>=2)||(r.stg===3&&S.week>=r.cd)){commitTo(r,elig[0][0]);cls[elig[0][0]]=(cls[elig[0][0]]||0)+1;}});}
+  if((elig[0][0]===S.user?canCommitUser(r):(elig[0][1]>=100&&(r.stg||0)>=2))||(r.stg===3&&S.week>=r.cd)){commitTo(r,elig[0][0]);cls[elig[0][0]]=(cls[elig[0][0]]||0)+1;}});}
 function battles(){return S.recruits.filter(r=>r.to===null&&inRace(r)&&r.off&&(r.stg||0)>=2).map(r=>{const L=topSchools(r),riv=L.find(e=>e[0]!==S.user);return {r,riv,d:r.int-(riv?riv[1]:0)};}).filter(b=>b.riv&&Math.abs(b.d)<=15).sort((a,b)=>a.r.rk-b.r.rk).slice(0,8);}
 function battlesPanel(){const B=battles();if(!B.length)return "";return `<h3 style="margin-top:12px">⚔️ Recruiting battles</h3><div class="list">${B.map(({r,riv,d})=>`<button class="li" data-act="recprof" data-v="${r.id}">${badge(T(riv[0]),26)}<div class="grow"><div style="font-weight:600">${r.st}★ ${esc(r.fn+" "+r.ln)} <span class="tag">${r.pos}</span></div><div class="sm muted">${STG[r.stg]}${r.stg===3?` · announces week ${r.cd}`:""} · vs ${esc(T(riv[0]).name)}</div></div><b class="num" style="color:${d>=0?"var(--green,#16a34a)":"var(--red,#dc2626)"}">${r.int} - ${riv[1]}</b></button>`).join("")}</div><p class="sm muted">Close races where you're in his top five. Rivals make pushes, so keep contacting him. In the top three you can send the head coach.</p>`;}
 function stageTag(r){if(r.to!==null)return "";if(r.cut)return `<span class="tag">Cut you</span>`;const s=r.stg||0;return s?`<span class="tag amb">${STG[s]}</span>`:"";}
@@ -1086,14 +1086,16 @@ function wants(r){if(!r.iw){const w={};CATS.forEach(c=>w[c]=0);const tilt=r.st>=
  let pool=CATS.slice();[3,2,2,1].forEach(lv=>{const c=wpick(pool,x=>tilt[x]);w[c]=lv;pool=pool.filter(x=>x!==c);});r.iw=w;}return r.iw;}
 function fitFor(t,r){const w=wants(r);let s=0,d=0;CATS.forEach(c=>{if(w[c]){s+=w[c]*gradeFor(t,c,r);d+=w[c];}});return d?s/d:50;}
 function fitScore(r){return Math.round(fitFor(T(S.user),r));}
-function hitChance(r,cat,kind){const w=wants(r)[cat],g=gradeFor(T(S.user),cat,r),used=((r.pu||{})[cat]||0),e=45+r.st*7,pp=pipeOf(r);return clamp(.3+(g-e)/70+w*.08-used*.1+(tieOf(r)?.08:0)+(pp.hs?.1:pp.aau?.06:0)+(kind==="visit"&&(cat==="Facilities"||cat==="Tradition")?.1:0)+(kind==="home"&&(cat==="Coach prestige"||cat==="Playing time")?.06:0),.05,.88);}
+function recentUses(r,cat){return (r.ph||[]).filter(x=>S.week-x[0]<3&&x[1]===cat).length;}
+function canCommitUser(r){if(!r.off||r.int<100||schAvail()<=0)return false;const st=r.stg||0;if(st>=2)return true;const riv=Math.max(0,...suitors(r).map(s=>s[1]));return st>=1&&r.int-riv>=15;}
+function hitChance(r,cat,kind){const w=wants(r)[cat],g=gradeFor(T(S.user),cat,r),used=recentUses(r,cat),e=45+r.st*7,pp=pipeOf(r);return clamp(.3+(g-e)/70+w*.08-used*.1+(tieOf(r)?.08:0)+(pp.hs?.1:pp.aau?.06:0)+(kind==="visit"&&(cat==="Facilities"||cat==="Tradition")?.1:0)+(kind==="home"&&(cat==="Coach prestige"||cat==="Playing time")?.06:0),.05,.88);}
 function pitchEV(r,cat,kind){const w=wants(r)[cat],h=hitChance(r,cat,kind),g=gradeFor(T(S.user),cat,r);return h*(.5+w*.4)*(g/80)-(1-h)*(.25+w*.15);}
 function bestPitch(r,kind){return keySort(CATS.slice(),c=>pitchEV(r,c,kind))[0];}
-function doPitch(r,kind,cat){const base=({call:[5,9],home:[14,20],visit:[20,28]})[kind],w=wants(r)[cat],g=gradeFor(T(S.user),cat,r),used=((r.pu||{})[cat]||0),h=hitChance(r,cat,kind),pull=pullOf(r),dim=r.int>=70?.6:1;
- r.pu=r.pu||{};r.pu[cat]=used+1;if(kind==="home")r.scl=Math.min(3,scl(r)+1);if(kind==="visit")r.scl=3;let d,hit;
+function doPitch(r,kind,cat){const base=({call:[5,9],home:[14,20],visit:[20,28]})[kind],w=wants(r)[cat],g=gradeFor(T(S.user),cat,r),used=recentUses(r,cat),h=hitChance(r,cat,kind),pull=pullOf(r),dim=r.int>=70?.6:1;
+ r.pu=r.pu||{};r.pu[cat]=(r.pu[cat]||0)+1;r.ph=(r.ph||[]).filter(x=>S.week-x[0]<3);r.ph.push([S.week,cat]);if(kind==="home")r.scl=Math.min(3,scl(r)+1);if(kind==="visit")r.scl=3;let d,hit;
  if(w===0){hit=R()<h;d=hit?ri(0,2):-ri(0,2);}
- else if(R()<h){hit=true;d=Math.round(ri(base[0],base[1])*pull*(.6+w*.4)*(g/80)*Math.pow(.8,used)*dim);d=Math.max(1,d);}
- else{hit=false;d=-Math.round(ri(base[0],base[1])*(.2+w*.12));}
+ else if(R()<h){hit=true;d=Math.round(ri(base[0],base[1])*pull*(.6+w*.4)*(g/80)*Math.pow(.85,used)*dim);d=Math.max(1,d);}
+ else{hit=false;d=-Math.round(ri(base[0],base[1])*(.15+w*.08)*(r.int>=70?.7:1));}
  r.int=clamp(r.int+d,0,r.off?100:85);r.lastP={cat,hit,d,w:S.week,k:kind};return {hit,d,w};}
 function catLow(c){return c==="NIL"||c.startsWith("NBA")?c:c.toLowerCase();}
 function pitchMsg(r,cat,res){if(res.w===0)return `${r.fn} shrugged at your ${catLow(cat)} pitch (${res.d>=0?"+":""}${res.d}). He doesn't care about it.`;return res.hit?`Hit! ${r.fn} loved your ${catLow(cat)} pitch (+${res.d}).`:`Miss. ${r.fn} didn't buy your ${catLow(cat)} pitch (${res.d}).`;}
@@ -1101,9 +1103,9 @@ function myGradesPanel(){const u=T(S.user);return `<div class="panel"><div class
 function pitchPanel(r){const u=T(S.user),w=wants(r),used=r.lc===S.week,k=UI.pk||"call",cost={call:5,home:25,visit:0}[k],canK=!used&&!r.cut&&r.to===null&&S.phase==="season"&&S.pts>=cost&&(k!=="visit"||S.cv>0);
  const rows=keySort(CATS.slice(),c=>w[c]*100+gradeFor(u,c,r)/100);
  return `<h3 style="margin-top:12px">What he wants</h3>${S.phase==="season"&&r.to===null&&!r.cut?`<div class="seg" style="margin:4px 0 8px">${[["call","Call · 5"],["home","Home visit · 25"],["visit",`Official visit · ${S.cv} left`]].map(([kk,l])=>`<button class="${k===kk?"on":""}" data-act="pk" data-v="${kk}" data-r="${r.id}">${l}</button>`).join("")}</div>`:""}
- <div class="list">${rows.map(c=>{const g=gradeFor(u,c,r),h=Math.round(hitChance(r,c,k)*100);return `<div class="li" style="flex-wrap:wrap"><div class="grow"><div><b>${CATI[c]} ${c}</b> <span class="tag ${w[c]>=3?"amb":""}">${IMPN[w[c]]}</span></div><div class="sm muted">Your grade <b style="color:${gradeCol(g)}">${gradeLetter(g)}</b>${w[c]?` · about ${h}% to hit`:""}${(r.pu||{})[c]?` · pitched ${(r.pu||{})[c]}x`:""}</div></div>${S.phase==="season"&&r.to===null&&!r.cut?`<button class="btn sm ${w[c]>=2?"pri":""}" data-act="pitch" data-v="${r.id}" data-c="${c}" ${canK?"":"disabled"}>Pitch</button>`:""}</div>`;}).join("")}</div>
+ <div class="list">${rows.map(c=>{const g=gradeFor(u,c,r),h=Math.round(hitChance(r,c,k)*100);return `<div class="li" style="flex-wrap:wrap"><div class="grow"><div><b>${CATI[c]} ${c}</b> <span class="tag ${w[c]>=3?"amb":""}">${IMPN[w[c]]}</span></div><div class="sm muted">Your grade <b style="color:${gradeCol(g)}">${gradeLetter(g)}</b>${w[c]?` · about ${h}% to hit`:""}${recentUses(r,c)?` · used ${recentUses(r,c)}x recently`:""}</div></div>${S.phase==="season"&&r.to===null&&!r.cut?`<button class="btn sm ${w[c]>=2?"pri":""}" data-act="pitch" data-v="${r.id}" data-c="${c}" ${canK?"":"disabled"}>Pitch</button>`:""}</div>`;}).join("")}</div>
  ${r.lastP?`<p class="sm" style="margin-top:6px;color:${r.lastP.hit?"var(--green,#16a34a)":"var(--red,#dc2626)"}">Last pitch, week ${r.lastP.w}: ${esc(r.lastP.cat)} ${r.lastP.hit?"hit":"missed"} (${r.lastP.d>=0?"+":""}${r.lastP.d})</p>`:""}
- <p class="sm muted">${used?"You already contacted him this week. ":""}Pitch what he cares about where your grade is strong. Hits raise his interest, misses lower it, and repeating the same pitch gets less effective. Official visits help facilities and tradition pitches; home visits help coach and playing-time pitches.</p>`;}
+ <p class="sm muted">${used?"You already contacted him this week. ":""}Pitch what he cares about where your grade is strong. Hits raise his interest, misses lower it, and using the same pitch again within three weeks gets less effective. Official visits help facilities and tradition pitches; home visits help coach and playing-time pitches.</p>`;}
 function fitPanel(r){const f=fitScore(r),pl=pullOf(r);return `<div class="panel sm"><div class="row"><span class="grow">Your fit</span><b class="num">${f}%</b></div><div class="row"><span class="grow">Prestige match</span><b>${pl>=1?"Strong":pl>=.7?"Fair":pl>=.45?"Reach":"Long shot"}</b></div><div class="row"><span class="grow">Projected role</span><b>${roleProj(r)}</b></div></div>`+pitchPanel(r);}
 
 /* ============ lineup spots ============ */
